@@ -75,6 +75,17 @@ export const adminSetUserRole = createServerFn({ method: "POST" })
       .from("user_roles")
       .insert({ user_id: data.user_id, role: data.role });
     if (error) throw new Error(error.message);
+
+    if (data.role === "owner") {
+      await supabaseAdmin.from("admins").upsert({
+        id: data.user_id,
+        user_id: data.user_id,
+        role: "owner",
+        updated_at: new Date().toISOString(),
+      });
+    } else {
+      await supabaseAdmin.from("admins").delete().eq("user_id", data.user_id);
+    }
     return { ok: true };
   });
 
@@ -95,6 +106,7 @@ export const adminDeleteUser = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // Best-effort cleanup of public rows before removing the auth user
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
+    await supabaseAdmin.from("admins").delete().eq("user_id", data.user_id);
     await supabaseAdmin.from("profiles").delete().eq("id", data.user_id);
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
     if (error) throw new Error(error.message);

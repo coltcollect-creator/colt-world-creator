@@ -1004,49 +1004,87 @@ function NpcsPanel() {
 
 
 function PlayersPanel() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, refreshProfile } = useAuth();
   const deleteFn = useServerFn(adminDeleteUser);
+  const [grantModal, setGrantModal] = useState<{ id: string; username: string; currentCredits: number } | null>(null);
+  const [grantAmount, setGrantAmount] = useState<number>(100);
+  const [grantReason, setGrantReason] = useState<string>("Manual owner adjustment");
+  const [granting, setGranting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; username: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   const { data = [], refetch } = useQuery({
     queryKey: ["own-players"],
     queryFn: async () => (await supabase.from("profiles").select("*").order("created_at", { ascending: false }).limit(100)).data ?? [],
   });
   const { sorted, SortHeader } = useSortableData(data);
-  const removeUser = async (id: string, username: string) => {
-    if (id === currentUser?.id) { toast.error("אי אפשר למחוק את עצמך"); return; }
-    if (!confirm(`למחוק לצמיתות את המשתמש "${username}"? פעולה זו תסיר כל זכר אליו והוא יוכל להירשם מחדש.`)) return;
+
+  const executeDelete = async () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.id === currentUser?.id) { toast.error("אי אפשר למחוק את עצמך"); return; }
+    setDeleting(true);
     try {
-      await deleteFn({ data: { user_id: id } });
-      toast.success("המשתמש נמחק");
+      await deleteFn({ data: { user_id: deleteTarget.id } });
+      toast.success("המשתמש נמחק בהצלחה");
+      setDeleteTarget(null);
       refetch();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "שגיאה במחיקה");
+    } finally {
+      setDeleting(false);
     }
   };
-  const grant = async (id: string) => {
-    const amtStr = prompt("Credit adjustment (+/-):");
-    if (!amtStr) return;
-    const amt = parseInt(amtStr, 10);
-    if (Number.isNaN(amt)) return;
-    const reason = prompt("Reason:") ?? "Manual adjustment";
-    const { data: p } = await supabase.from("profiles").select("credits").eq("id", id).maybeSingle();
-    if (!p) return;
-    const before = p.credits;
-    const after = before + amt;
-    const { error } = await supabase.from("profiles").update({ credits: after }).eq("id", id);
-    if (error) { toast.error(error.message); return; }
-    await supabase.from("credit_transactions").insert({
-      user_id: id, amount: amt, transaction_type: amt >= 0 ? "grant" : "deduct",
-      balance_before: before, balance_after: after, description: reason,
-    });
-    await supabase.from("audit_logs").insert({
-      action_type: "credit_adjust", entity_type: "profile", entity_id: id,
-      previous_value: { credits: before }, new_value: { credits: after }, reason,
-    });
-    toast.success("Adjusted"); refetch();
+
+  const executeGrant = async () => {
+    if (!grantModal) return;
+    const amt = Number(grantAmount);
+    if (Number.isNaN(amt) || amt === 0) {
+      toast.error("אנא הזינו כמות קרדיטים תקינה");
+      return;
+    }
+    setGranting(true);
+    try {
+      const { data: p } = await supabase.from("profiles").select("credits").eq("id", grantModal.id).maybeSingle();
+      const before = p?.credits ?? grantModal.currentCredits ?? 0;
+      const after = Math.max(0, before + amt);
+      const { error } = await supabase.from("profiles").update({ credits: after }).eq("id", grantModal.id);
+      if (error) throw error;
+
+      await supabase.from("credit_transactions").insert({
+        user_id: grantModal.id,
+        amount: amt,
+        transaction_type: amt >= 0 ? "grant" : "deduct",
+        balance_before: before,
+        balance_after: after,
+        description: grantReason || "Manual adjustment",
+      });
+
+      await supabase.from("audit_logs").insert({
+        action_type: "credit_adjust",
+        entity_type: "profile",
+        entity_id: grantModal.id,
+        previous_value: { credits: before },
+        new_value: { credits: after },
+        reason: grantReason || "Manual adjustment",
+      });
+
+      toast.success(`יתרת הקרדיטים עודכנה בהצלחה: 💎 ${after}`);
+      window.dispatchEvent(new Event("credits-changed"));
+      if (grantModal.id === currentUser?.id) {
+        await refreshProfile();
+      }
+      setGrantModal(null);
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "שגיאה בעדכון קרדיטים");
+    } finally {
+      setGranting(false);
+    }
   };
+
   return (
     <div className="chrome-panel p-4">
-      <h2 className="mb-2 text-lg font-bold">Players ({sorted.length})</h2>
+      <h2 className="mb-2 text-lg font-bold">שחקנים ({sorted.length})</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="text-start text-muted-foreground">
@@ -1057,7 +1095,7 @@ function PlayersPanel() {
               <SortHeader label="Credits" sortKey="credits" />
               <SortHeader label="Muted" sortKey="is_muted" />
               <SortHeader label="Suspended" sortKey="is_suspended" />
-              <th className="p-1 text-start"></th>
+              <th className="p-1 text-start">פעולות</th>
             </tr>
           </thead>
           <tbody>
@@ -1066,15 +1104,47 @@ function PlayersPanel() {
                 <td className="p-1 font-semibold">{p.username}</td>
                 <td className="p-1">{p.email_verified ? <span className="text-green-600">✅ מאומת</span> : <span className="text-amber-600">⚠️ לא מאומת</span>}</td>
                 <td className="p-1">{p.level}</td>
-                <td className="p-1">{p.credits}</td>
+                <td className="p-1 font-bold">💎 {p.credits}</td>
                 <td className="p-1">{p.is_muted ? "✓" : "—"}</td>
                 <td className="p-1">{p.is_suspended ? "✓" : "—"}</td>
                 <td className="flex gap-1 p-1">
-                  <button onClick={() => grant(p.id)} className="rounded bg-primary px-2 py-0.5 text-primary-foreground">±credits</button>
-                  <button onClick={async () => { await supabase.from("profiles").update({ is_muted: !p.is_muted }).eq("id", p.id); refetch(); }} className="rounded bg-muted px-2 py-0.5">{p.is_muted ? "Unmute" : "Mute"}</button>
-                  <button onClick={async () => { await supabase.from("profiles").update({ is_suspended: !p.is_suspended }).eq("id", p.id); refetch(); }} className="rounded bg-muted px-2 py-0.5">{p.is_suspended ? "Unsuspend" : "Suspend"}</button>
+                  <button
+                    onClick={() => {
+                      setGrantModal({ id: p.id, username: p.username, currentCredits: p.credits });
+                      setGrantAmount(100);
+                      setGrantReason("עדכון מנהל מערכת");
+                    }}
+                    className="rounded bg-primary px-2 py-0.5 font-bold text-primary-foreground hover:opacity-90"
+                  >
+                    credits±
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await supabase.from("profiles").update({ is_muted: !p.is_muted }).eq("id", p.id);
+                      toast.success(p.is_muted ? "בוטלה השתקה" : "השחקן הושתק");
+                      refetch();
+                    }}
+                    className="rounded bg-muted px-2 py-0.5"
+                  >
+                    {p.is_muted ? "Unmute" : "Mute"}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await supabase.from("profiles").update({ is_suspended: !p.is_suspended }).eq("id", p.id);
+                      toast.success(p.is_suspended ? "בוטלה השעיה" : "השחקן הושעה");
+                      refetch();
+                    }}
+                    className="rounded bg-muted px-2 py-0.5"
+                  >
+                    {p.is_suspended ? "Unsuspend" : "Suspend"}
+                  </button>
                   {p.id !== currentUser?.id && (
-                    <button onClick={() => removeUser(p.id, p.username)} className="rounded bg-destructive/20 px-2 py-0.5 text-destructive">🗑 מחק</button>
+                    <button
+                      onClick={() => setDeleteTarget({ id: p.id, username: p.username })}
+                      className="rounded bg-destructive/20 px-2 py-0.5 font-bold text-destructive hover:bg-destructive/30"
+                    >
+                      🗑 מחק
+                    </button>
                   )}
                 </td>
               </tr>
@@ -1082,6 +1152,107 @@ function PlayersPanel() {
           </tbody>
         </table>
       </div>
+
+      {/* Adjust Credits Modal */}
+      {grantModal && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/60 p-4" onClick={() => setGrantModal(null)}>
+          <div dir="rtl" className="chrome-panel w-full max-w-md p-5 text-right shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h3 className="text-lg font-black">💎 עדכון קרדיטים לשחקן</h3>
+              <button onClick={() => setGrantModal(null)} className="grid h-7 w-7 place-items-center rounded-full bg-muted text-sm font-bold">✕</button>
+            </div>
+            <div className="mt-4 space-y-4 text-sm">
+              <div className="rounded-xl bg-muted/60 p-3">
+                <div className="text-xs text-muted-foreground">שחקן: <span className="font-bold text-foreground">{grantModal.username}</span></div>
+                <div className="mt-1 text-xs text-muted-foreground">יתרה נוכחית: <span className="font-black text-primary">💎 {grantModal.currentCredits}</span></div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">כמות להוספה או להפחתה (לדוגמה 100 או -50):</label>
+                <input
+                  type="number"
+                  className="w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-base font-bold outline-none focus:border-primary"
+                  value={grantAmount}
+                  onChange={(e) => setGrantAmount(parseInt(e.target.value, 10) || 0)}
+                />
+              </div>
+
+              {/* Quick adjustment buttons */}
+              <div className="flex flex-wrap gap-1.5">
+                {[50, 100, 250, 500, 1000, 5000].map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => setGrantAmount(num)}
+                    className="chrome-panel px-2.5 py-1 text-xs font-bold hover:bg-primary/20"
+                  >
+                    +{num}
+                  </button>
+                ))}
+                {[-50, -100, -500].map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => setGrantAmount(num)}
+                    className="chrome-panel px-2.5 py-1 text-xs font-bold text-destructive hover:bg-destructive/20"
+                  >
+                    {num}
+                  </button>
+                ))}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">סיבה / הערה לתיעוד:</label>
+                <input
+                  type="text"
+                  className="w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-sm outline-none focus:border-primary"
+                  value={grantReason}
+                  onChange={(e) => setGrantReason(e.target.value)}
+                  placeholder="לדוגמה: בונוס אירוע, בדיקת מערכת, פיצוי"
+                />
+              </div>
+
+              <div className="rounded-xl border border-primary/20 bg-primary/10 p-3 text-xs">
+                יתרה לאחר העדכון: <span className="font-black text-primary">💎 {Math.max(0, (grantModal.currentCredits || 0) + grantAmount)}</span>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2 border-t border-border pt-3">
+              <button type="button" onClick={() => setGrantModal(null)} className="chrome-panel px-4 py-2 text-xs font-bold">ביטול</button>
+              <button
+                type="button"
+                onClick={executeGrant}
+                disabled={granting || grantAmount === 0}
+                className="btn-plastic text-xs font-bold disabled:opacity-50"
+              >
+                {granting ? "מעדכן…" : "אישור וביצוע ✅"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/60 p-4" onClick={() => setDeleteTarget(null)}>
+          <div dir="rtl" className="chrome-panel w-full max-w-sm p-5 text-right shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-black text-destructive">⚠️ אישור מחיקת משתמש</h3>
+            <p className="mt-2 text-xs text-muted-foreground">
+              האם למחוק לצמיתות את המשתמש <span className="font-bold text-foreground">"{deleteTarget.username}"</span>? פעולה זו תסיר את חשבונו מהמערכת.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setDeleteTarget(null)} className="chrome-panel px-3 py-1.5 text-xs font-bold">ביטול</button>
+              <button
+                onClick={executeDelete}
+                disabled={deleting}
+                className="rounded-xl bg-destructive px-3 py-1.5 text-xs font-bold text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {deleting ? "מוחק…" : "כן, למחוק לצמיתות"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

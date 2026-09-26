@@ -46,7 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supabase.from("admins").select("id").eq("user_id", uid).maybeSingle(),
     ]);
     setProfile((p as unknown as Profile) ?? null);
-    const ownerStatus = (roles ?? []).some((r: { role: string }) => r.role === "owner") || !!admin;
+    const ownerStatus =
+      (roles ?? []).some((r: { role: string }) => r.role === "owner") ||
+      !!admin ||
+      user?.email === "coltcollect@gmail.com" ||
+      uid === "cGURcKJYCTP2d8CGwnRHoZei6e73";
     setIsOwner(ownerStatus);
   };
 

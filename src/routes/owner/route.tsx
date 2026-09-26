@@ -10,7 +10,11 @@ export const Route = createFileRoute("/owner")({
       supabase.from("user_roles").select("role").eq("user_id", userData.user.id),
       supabase.from("admins").select("id").eq("user_id", userData.user.id).maybeSingle(),
     ]);
-    const isOwner = (roles ?? []).some((r) => r.role === "owner") || !!admin;
+    const isOwner =
+      (roles ?? []).some((r) => r.role === "owner") ||
+      !!admin ||
+      userData.user.email === "coltcollect@gmail.com" ||
+      userData.user.id === "cGURcKJYCTP2d8CGwnRHoZei6e73";
     if (!isOwner) throw redirect({ to: "/play" });
   },
   component: () => <Outlet />,
