@@ -1,0 +1,7 @@
+{
+  "name": "COLT Market World",
+  "description": "Interactive browser-based 2D multiplayer-style collectible trading world inspired by Comic-Con and MapleStory Free Market.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

@@ -1,0 +1,251 @@
+{
+  "entities": {
+    "GameSettings": {
+      "title": "GameSettings",
+      "description": "Global settings for COLT Market World game and convention",
+      "type": "object",
+      "properties": {
+        "game_name": { "type": "string", "maxLength": 100 },
+        "logo_url": { "type": "string" },
+        "favicon_url": { "type": "string" },
+        "default_map_id": { "type": "string" },
+        "starting_credits": { "type": "number" },
+        "starting_level": { "type": "number" },
+        "starting_xp": { "type": "number" },
+        "movement_speed": { "type": "number" },
+        "jump_strength": { "type": "number" },
+        "gravity": { "type": "number" },
+        "maintenance_mode": { "type": "boolean" },
+        "registration_enabled": { "type": "boolean" },
+        "credit_purchasing_enabled": { "type": "boolean" },
+        "shipping_gems_cost": { "type": "number" },
+        "email_verification_required": { "type": "boolean" },
+        "vendor_program_enabled": { "type": "boolean" }
+      }
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with avatar, credits, and progression stats",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 50 },
+        "display_name": { "type": "string", "maxLength": 100 },
+        "avatar_config": { "type": "object" },
+        "credits": { "type": "number" },
+        "level": { "type": "number" },
+        "xp": { "type": "number" },
+        "active_title_id": { "type": "string" },
+        "current_map_id": { "type": "string" },
+        "last_x": { "type": "number" },
+        "last_y": { "type": "number" },
+        "character_id": { "type": "string" },
+        "role_id": { "type": "string" },
+        "is_suspended": { "type": "boolean" },
+        "is_muted": { "type": "boolean" },
+        "email_verified": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "username"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted admin role lookup document",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id"]
+    },
+    "Character": {
+      "title": "Character",
+      "description": "Playable character model and sprite config",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string" },
+        "role_id": { "type": "string" },
+        "image_url": { "type": "string" },
+        "sprite_right_url": { "type": "string" },
+        "sprite_left_url": { "type": "string" },
+        "sprite_jump_url": { "type": "string" },
+        "is_starter": { "type": "boolean" },
+        "is_free": { "type": "boolean" },
+        "credit_price": { "type": "number" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["name"]
+    },
+    "Cosmetic": {
+      "title": "Cosmetic",
+      "description": "Equippable cosmetic gear, clothes, hats, and skins",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 100 },
+        "category_id": { "type": "string" },
+        "layer_type": { "type": "string" },
+        "image_url": { "type": "string" },
+        "thumbnail_url": { "type": "string" },
+        "credit_price": { "type": "number" },
+        "is_free": { "type": "boolean" },
+        "required_level": { "type": "number" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["name", "layer_type"]
+    },
+    "Map": {
+      "title": "Map",
+      "description": "World space map and convention area",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "slug": { "type": "string", "maxLength": 100 },
+        "name": { "type": "string", "maxLength": 100 },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "background_url": { "type": "string" },
+        "music_url": { "type": "string" },
+        "is_active": { "type": "boolean" },
+        "is_archived": { "type": "boolean" },
+        "is_public_room": { "type": "boolean" }
+      },
+      "required": ["slug", "name"]
+    },
+    "Store": {
+      "title": "Store",
+      "description": "Store booth within convention world",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "slug": { "type": "string", "maxLength": 100 },
+        "name": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string" },
+        "store_type": { "type": "string" },
+        "image_url": { "type": "string" },
+        "active": { "type": "boolean" },
+        "is_open": { "type": "boolean" }
+      },
+      "required": ["slug", "name"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Collectible card, physical item, or pack in stores",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "store_id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string" },
+        "image_url": { "type": "string" },
+        "credit_price": { "type": "number" },
+        "cash_price": { "type": "number" },
+        "stock": { "type": "number" },
+        "unlimited_stock": { "type": "boolean" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["name"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Player purchase and order fulfillment record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string", "maxLength": 128 },
+        "order_type": { "type": "string" },
+        "status": { "type": "string" },
+        "product_id": { "type": "string" },
+        "quantity": { "type": "number" },
+        "credits_charged": { "type": "number" },
+        "fulfillment_status": { "type": "string" },
+        "delivery_address": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "order_type"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Live spatial and global chat messages",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string", "maxLength": 128 },
+        "channel": { "type": "string", "maxLength": 50 },
+        "message": { "type": "string", "maxLength": 500 },
+        "deleted": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "channel", "message"]
+    },
+    "Auction": {
+      "title": "Auction",
+      "description": "Live collectible auction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string" },
+        "image_url": { "type": "string" },
+        "starting_price": { "type": "number" },
+        "bid_increment": { "type": "number" },
+        "current_bid": { "type": "number" },
+        "current_leader": { "type": "string" },
+        "winner_id": { "type": "string" },
+        "status": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["name", "starting_price"]
+    }
+  },
+  "firestore": {
+    "/game_settings/{settingsId}": {
+      "schema": "GameSettings",
+      "description": "Global game configuration parameters"
+    },
+    "/profiles/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile with player stats"
+    },
+    "/admins/{userId}": {
+      "schema": "AdminRecord",
+      "description": "Admin identity whitelist"
+    },
+    "/characters/{characterId}": {
+      "schema": "Character",
+      "description": "Available characters"
+    },
+    "/cosmetics/{cosmeticId}": {
+      "schema": "Cosmetic",
+      "description": "Catalog of wearable cosmetics"
+    },
+    "/maps/{mapId}": {
+      "schema": "Map",
+      "description": "Maps in the game world"
+    },
+    "/stores/{storeId}": {
+      "schema": "Store",
+      "description": "Stores and dealer booths"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Catalog products for sale"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "User orders and claims"
+    },
+    "/chat_messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Spatial and global chat messages"
+    },
+    "/auctions/{auctionId}": {
+      "schema": "Auction",
+      "description": "Collectible card live auctions"
+    }
+  }
+}

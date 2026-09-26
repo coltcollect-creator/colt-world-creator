@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.tg_auto_verify_owner() FROM PUBLIC, anon;
