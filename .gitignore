@@ -10,3 +10,5 @@ coverage/
 .nitro/
 .wrangler/
 bun.lock*
+.github_token*
+*.secret
