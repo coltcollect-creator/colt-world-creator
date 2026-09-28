@@ -1,31 +1,15 @@
-// COLT Market World Service Worker — Network-First Strategy
-const CACHE_NAME = 'colt-world-cache-v3';
-const PRECACHE_ASSETS = [
-  '/',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/favicon.ico'
-];
+// COLT Market World Service Worker — Auto-Update & Network-First Strategy
+const CACHE_VERSION = 'colt-world-v4-' + Date.now();
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_ASSETS);
-    })
-  );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
+        keys.map((key) => caches.delete(key))
       );
     }).then(() => self.clients.claim())
   );
@@ -35,29 +19,30 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
 
-  // Skip firestore / api / analytics / cloud functions / extensions
+  // Never intercept Firestore, Firebase, APIs, Auth, or Supabase
   if (
     url.origin.includes('firestore') ||
     url.origin.includes('firebase') ||
+    url.origin.includes('googleapis') ||
+    url.origin.includes('supabase') ||
     url.pathname.startsWith('/api/')
   ) {
     return;
   }
 
-  // Network-First for HTML navigation and JS/CSS updates
+  // Network-first with fast cache fallback
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-cache' })
       .then((networkResponse) => {
         if (networkResponse && networkResponse.status === 200) {
           const resClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
+          caches.open(CACHE_VERSION).then((cache) => {
             cache.put(event.request, resClone);
-          });
+          }).catch(() => {});
         }
         return networkResponse;
       })
       .catch(async () => {
-        // Fallback to cache when offline
         const cached = await caches.match(event.request);
         if (cached) return cached;
         if (event.request.mode === 'navigate') {
