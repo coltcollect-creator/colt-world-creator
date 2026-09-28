@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
+import { trackQuestAction } from "@/lib/quest-events";
 
 type Msg = { id: string; user_id: string; message: string; created_at: string; username?: string; level?: number };
 
@@ -26,7 +27,13 @@ export function GlobalChat() {
         const map = new Map((ps ?? []).map((p) => [p.id, p]));
         list.forEach((m) => { const p = map.get(m.user_id); if (p) { m.username = p.username; m.level = p.level; } });
       }
-      setMessages(list);
+      const seen = new Set<string>();
+      const uniqueList = list.filter((m) => {
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+      });
+      setMessages(uniqueList);
     })();
     const channel = supabase.channel("global-chat").on("postgres_changes",
       { event: "INSERT", schema: "public", table: "chat_messages", filter: "channel=eq.global" },
@@ -34,7 +41,17 @@ export function GlobalChat() {
         const m = payload.new as Msg;
         const { data: ps } = await supabase.rpc("get_public_profiles", { _ids: [m.user_id] });
         const p = ps?.[0];
-        setMessages((prev) => [...prev.slice(-100), { ...m, username: p?.username, level: p?.level }]);
+        setMessages((prev) => {
+        const exists = prev.some((item) => item.id === m.id);
+        if (exists) {
+          return prev.map((item) =>
+            item.id === m.id
+              ? { ...item, username: p?.username ?? item.username, level: p?.level ?? item.level }
+              : item
+          );
+        }
+        return [...prev.slice(-100), { ...m, username: p?.username, level: p?.level }];
+      });
       }
     ).subscribe();
     return () => { cancelled = true; supabase.removeChannel(channel); };
@@ -46,18 +63,49 @@ export function GlobalChat() {
     if (text.length > 300) { toast.error("Message too long (max 300)"); return; }
     if (Date.now() - lastSent < 1000) { toast.error("Slow down!"); return; }
     setLastSent(Date.now());
-    const { error } = await supabase.from("chat_messages").insert({ user_id: user.id, channel: "global", message: text.trim() });
-    if (error) toast.error(error.message);
-    else { setText(""); supabase.rpc("progress_quest", { _action_type: "chat_public", _amount: 1 }).then(() => {}); }
+    const msgText = text.trim();
+    setText("");
 
+    // Optimistically show message immediately in chat box
+    const optimisticMsg: Msg = {
+      id: crypto.randomUUID(),
+      user_id: user.id,
+      message: msgText,
+      created_at: new Date().toISOString(),
+      username: profile?.username || "You",
+      level: profile?.level || 1,
+    };
+    setMessages((prev) => [...prev.slice(-100), optimisticMsg]);
+
+    // Dispatch event for floating bubble above character's head
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("colt-chat-bubble", {
+        detail: { userId: user.id, message: msgText }
+      }));
+    }
+    trackQuestAction("send_chat", 1);
+
+    const { error } = await supabase.from("chat_messages").insert({
+      id: optimisticMsg.id,
+      user_id: user.id,
+      channel: "global",
+      message: msgText,
+      deleted: false,
+      created_at: optimisticMsg.created_at,
+    });
+    if (error) {
+      toast.error(error.message);
+    } else {
+      supabase.rpc("progress_quest", { _action_type: "chat_public", _amount: 1 }).then(() => {});
+    }
   };
 
   return (
     <div className="chrome-panel flex h-64 flex-col p-3">
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Global chat</div>
       <div className="flex-1 space-y-1 overflow-y-auto pr-1 text-sm">
-        {messages.map((m) => (
-          <div key={m.id} className="flex gap-2">
+        {messages.map((m, idx) => (
+          <div key={m.id || `msg-${idx}`} className="flex gap-2">
             <span className="text-primary font-semibold">{m.username ?? "…"}</span>
             {typeof m.level === "number" && <span className="rounded bg-muted px-1 text-xs">Lv{m.level}</span>}
             <span>{m.message}</span>

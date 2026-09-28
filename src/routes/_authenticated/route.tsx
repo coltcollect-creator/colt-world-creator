@@ -5,14 +5,22 @@ import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { TourButton } from "@/lib/tour";
+import { PwaInstallButton } from "@/components/pwa/PwaInstallModal";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
     let { data } = await supabase.auth.getUser();
-    if (!data.user) {
-      const guestRes = await (supabase.auth as any).signInAsGuest();
-      if (guestRes?.data?.user) return { user: guestRes.data.user };
+    if (!data?.user && typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("colt_auth_session_v1");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.id) return { user: parsed };
+        }
+      } catch {}
+    }
+    if (!data?.user) {
       throw redirect({ to: "/auth" });
     }
     return { user: data.user };
@@ -87,7 +95,12 @@ function AuthedLayout() {
       navigate({ to: "/verify-email" });
       return;
     }
-    if (!mustVerify && Object.keys(profile.avatar_config ?? {}).length === 0 && loc.pathname !== "/character-setup") {
+    const hasCharacter = Boolean(
+      profile.character_id ||
+      profile.avatar_config?._initialized ||
+      Object.keys(profile.avatar_config ?? {}).length > 0
+    );
+    if (!mustVerify && !hasCharacter && loc.pathname !== "/character-setup") {
       navigate({ to: "/character-setup" });
     }
   }, [loading, user, profile, isOwner, verifyRequired, loc.pathname, navigate]);
@@ -131,6 +144,7 @@ function AuthedLayout() {
           )}
         </nav>
         <div className="flex items-center gap-1.5 text-sm">
+          <PwaInstallButton />
           <TourButton />
           {profile && (
             <>
@@ -194,6 +208,9 @@ function AuthedLayout() {
                   <span className="text-lg">🛠️</span>{t("nav.owner")}
                 </Link>
               )}
+              <div className="mt-3">
+                <PwaInstallButton className="w-full btn-plastic flex items-center justify-center gap-2 bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold text-xs py-2 shadow" />
+              </div>
             </nav>
             <div className="border-t border-border p-3 flex items-center justify-between gap-2">
               <Link to="/vendor" className="chrome-panel px-3 py-1.5 text-xs font-bold">

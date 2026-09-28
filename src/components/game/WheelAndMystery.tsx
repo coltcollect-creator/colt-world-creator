@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useServerFn } from "@tanstack/react-start";
 import { syncWooStock } from "@/lib/woo.functions";
 import { cn } from "@/lib/utils";
+import { trackQuestAction } from "@/lib/quest-events";
 
 type Reward = {
   id?: string;
@@ -122,6 +123,7 @@ function WheelSpinner({ wheel, onSpun }: { wheel: Wheel; onSpun: () => void }) {
       setResult(res.reward);
       confetti({ particleCount: 120, spread: 90, origin: { y: 0.6 } });
       toast.success(`זכית: ${labelFor(res.reward)}`);
+      trackQuestAction("spin_wheel", 1);
       if (res.reward?.type === "product" && res.reward.product_id) {
         pushWooStock({ data: { product_id: res.reward.product_id } }).catch(() => {});
       }
@@ -223,6 +225,7 @@ export function MysteryView({ storeId }: { storeId: string }) {
     if (error) { toast.error(error.message); return; }
     const res = data as { ok: boolean; reward: Reward };
     setOpening({ boxName: name, reward: res.reward });
+    trackQuestAction("open_mystery", 1);
     if (res.reward?.type === "product" && res.reward.product_id) {
       pushWooStock({ data: { product_id: res.reward.product_id } }).catch(() => {});
     }

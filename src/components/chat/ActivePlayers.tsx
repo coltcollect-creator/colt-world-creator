@@ -46,12 +46,21 @@ export function ActivePlayers() {
   useEffect(() => {
     const load = async () => {
       const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      const { data } = await supabase.from("active_players").select("user_id,x,y,last_seen").gt("last_seen", cutoff).limit(50);
+      const { data } = await supabase.from("active_players").select("user_id,x,y,last_seen").gt("last_seen", cutoff).limit(100);
       if (!data) return;
-      const ids = data.map((d) => d.user_id);
+
+      // Strictly deduplicate by user_id
+      const uniqueMap = new Map<string, ActivePlayer>();
+      for (const d of data) {
+        if (!uniqueMap.has(d.user_id)) {
+          uniqueMap.set(d.user_id, d as ActivePlayer);
+        }
+      }
+      const uniqueList = Array.from(uniqueMap.values());
+      const ids = uniqueList.map((d) => d.user_id);
       const { data: ps } = ids.length ? await supabase.rpc("get_public_profiles", { _ids: ids }) : { data: [] };
       const map = new Map((ps ?? []).map((p) => [p.id, p]));
-      setPlayers(data.map((d) => ({ ...(d as ActivePlayer), username: map.get(d.user_id)?.username, level: map.get(d.user_id)?.level })));
+      setPlayers(uniqueList.map((d) => ({ ...d, username: map.get(d.user_id)?.username, level: map.get(d.user_id)?.level })));
     };
     load();
     const t = setInterval(load, 15000);

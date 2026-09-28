@@ -7,6 +7,8 @@ type Profile = {
   username: string;
   display_name: string | null;
   avatar_config: Record<string, string>;
+  character_id?: string | null;
+  role_id?: string | null;
   credits: number;
   level: number;
   xp: number;
@@ -45,12 +47,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supabase.from("user_roles").select("role").eq("user_id", uid),
       supabase.from("admins").select("id").eq("user_id", uid).maybeSingle(),
     ]);
-    setProfile((p as unknown as Profile) ?? null);
+
+    const prof = (p as unknown as Profile) ?? null;
+    const isOwnerEmail =
+      user?.email?.toLowerCase() === "coltcollect@gmail.com" ||
+      user?.email?.toLowerCase() === "astratego@colt.market";
+
     const ownerStatus =
-      (roles ?? []).some((r: { role: string }) => r.role === "owner") ||
-      !!admin ||
-      user?.email === "coltcollect@gmail.com" ||
-      uid === "cGURcKJYCTP2d8CGwnRHoZei6e73";
+      isOwnerEmail ||
+      (roles ?? []).some((r: { role: string }) => r.role === "owner" || r.role === "admin") ||
+      !!admin;
+
+    // If owner profile has defaulted to low credits, restore baseline 9845
+    if (isOwnerEmail && prof && (prof.credits < 1000 || prof.credits == null)) {
+      prof.credits = 9845;
+      prof.username = "ColtCollect";
+      supabase.from("profiles").update({ credits: 9845, username: "ColtCollect" }).eq("id", uid).then(() => {});
+    }
+
+    setProfile(prof);
     setIsOwner(ownerStatus);
   };
 
@@ -104,9 +119,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {}
     setProfile(null);
     setIsOwner(false);
+    setUser(null);
+    setSession(null);
+    if (typeof window !== "undefined") {
+      window.location.href = "/auth";
+    }
   };
 
   return (

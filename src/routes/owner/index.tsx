@@ -21,6 +21,8 @@ import { TreasuresPanel, CluesPanel } from "@/components/owner/TreasuresPanel";
 import { importWooProducts } from "@/lib/woo.functions";
 import { WooSyncSettings } from "@/components/owner/WooSyncSettings";
 import { VendorProductsPanel } from "@/components/owner/VendorProductsPanel";
+import { LevelsBuilderPanel } from "@/components/owner/LevelsBuilderPanel";
+import { AuditLogsPanel } from "@/components/owner/AuditLogsPanel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -31,7 +33,7 @@ export const Route = createFileRoute("/owner/")({ component: OwnerConsole });
 type Tab =
   | "dashboard" | "messages" | "broadcast" | "maps" | "stores" | "products" | "vendorproducts" | "categories" | "cosmetics" | "characters" | "roles" | "npcs"
   | "wheels" | "mystery" | "auctions" | "liverips" | "treasures" | "clues"
-  | "quests" | "titles" | "players" | "users" | "orders" | "transactions" | "packages"
+  | "quests" | "titles" | "levels" | "players" | "users" | "orders" | "transactions" | "packages"
   | "moderation" | "audit" | "settings";
 
 const TABS: { key: Tab; i18n: string; icon: string; fallback?: string }[] = [
@@ -55,6 +57,7 @@ const TABS: { key: Tab; i18n: string; icon: string; fallback?: string }[] = [
   { key: "clues", i18n: "owner.tab.clues", icon: "🧩", fallback: "רמזים" },
   { key: "quests", i18n: "owner.tab.quests", icon: "📜" },
   { key: "titles", i18n: "owner.tab.titles", icon: "🏆" },
+  { key: "levels", i18n: "owner.tab.levels", icon: "⭐", fallback: "בניית רמות ותגמולים" },
   { key: "players", i18n: "owner.tab.players", icon: "👥" },
   { key: "users", i18n: "owner.tab.users", icon: "🔑" },
   { key: "orders", i18n: "owner.tab.orders", icon: "🧾" },
@@ -310,7 +313,7 @@ const TAB_GROUPS: { label: string; icon: string; keys: Tab[] }[] = [
   { label: "עולם המשחק", icon: "🗺️", keys: ["maps", "stores", "npcs", "characters", "roles", "cosmetics"] },
   { label: "חנות ומוצרים", icon: "📦", keys: ["products", "vendorproducts", "categories", "packages"] },
   { label: "עמדות ומשחקים", icon: "🎡", keys: ["wheels", "mystery", "auctions", "liverips", "treasures", "clues"] },
-  { label: "התקדמות שחקנים", icon: "📜", keys: ["quests", "titles"] },
+  { label: "התקדמות שחקנים", icon: "📜", keys: ["quests", "titles", "levels"] },
   { label: "שחקנים והרשאות", icon: "👥", keys: ["players", "users", "moderation"] },
   { label: "מסחר ותנועות", icon: "🧾", keys: ["orders", "transactions"] },
   { label: "מערכת", icon: "⚙️", keys: ["audit", "settings"] },
@@ -442,13 +445,14 @@ function OwnerConsole() {
       {tab === "clues" && <CluesPanel />}
       {tab === "quests" && <ManagedTable schema={SCHEMAS.quests} title={t("owner.tab.quests")} />}
       {tab === "titles" && <ManagedTable schema={SCHEMAS.titles} title={t("owner.tab.titles")} />}
+      {tab === "levels" && <LevelsBuilderPanel />}
       {tab === "players" && <PlayersPanel />}
       {tab === "users" && <UsersPanel />}
       {tab === "orders" && <OrdersPanel />}
       {tab === "transactions" && <ReadTable title={t("owner.tab.transactions")} table="credit_transactions" cols={["transaction_type", "amount", "balance_after", "description", "created_at"]} />}
       {tab === "packages" && <PackagesPanel />}
       {tab === "moderation" && <Moderation />}
-      {tab === "audit" && <ReadTable title={t("owner.tab.audit")} table="audit_logs" cols={["action_type", "entity_type", "reason", "created_at"]} />}
+      {tab === "audit" && <AuditLogsPanel />}
       {tab === "settings" && <SettingsPanel />}
     </div>
   );
@@ -458,6 +462,7 @@ function Dashboard() {
   const [activeOpen, setActiveOpen] = useState(false);
   const stats = useQuery({
     queryKey: ["owner-stats"],
+    refetchInterval: 10000,
     queryFn: async () => {
       const [players, verified, active, orders, quests, txSum, convs] = await Promise.all([
         supabase.from("profiles").select("id", { count: "exact", head: true }),
@@ -468,8 +473,13 @@ function Dashboard() {
         supabase.from("credit_transactions").select("amount"),
         supabase.from("store_conversations").select("id", { count: "exact", head: true }).gt("unread_owner", 0),
       ]);
-      const spent = (txSum.data ?? []).filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0);
-      const granted = (txSum.data ?? []).filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+      const txRows = txSum.data ?? [];
+      const spent = txRows.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0);
+      let granted = txRows.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+      if (granted === 0) {
+        const allProf = (await supabase.from("profiles").select("credits")).data ?? [];
+        granted = allProf.reduce((s, p) => s + (Number(p.credits) || 0), 0);
+      }
       return {
         players: players.count ?? 0, verified: verified.count ?? 0, active: active.count ?? 0, orders: orders.count ?? 0,
         activeQuests: quests.count ?? 0, spent: -spent, granted, pending: convs.count ?? 0,
@@ -483,14 +493,15 @@ function Dashboard() {
     queryFn: async () => {
       const since = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       const { data: ap } = await supabase.from("active_players").select("user_id, map_id, x, y, last_seen").gt("last_seen", since);
-      const ids = (ap ?? []).map((a) => a.user_id);
+      const uniqueAp = Array.from(new Map((ap ?? []).map((a) => [a.user_id, a])).values());
+      const ids = uniqueAp.map((a) => a.user_id);
       if (!ids.length) return [];
       const [{ data: profiles }, { data: maps }] = await Promise.all([
         supabase.from("profiles").select("id, username, display_name, level, xp, current_map_id, last_x, last_y, avatar_config").in("id", ids),
         supabase.from("maps").select("id, name"),
       ]);
       const mapById = Object.fromEntries((maps ?? []).map((m) => [m.id, m.name]));
-      return (ap ?? []).map((a) => {
+      return uniqueAp.map((a) => {
         const p = (profiles ?? []).find((pr) => pr.id === a.user_id);
         return {
           ...a,
@@ -1006,6 +1017,7 @@ function NpcsPanel() {
 function PlayersPanel() {
   const { user: currentUser, refreshProfile } = useAuth();
   const deleteFn = useServerFn(adminDeleteUser);
+  const [subTab, setSubTab] = useState<"players" | "levels">("players");
   const [grantModal, setGrantModal] = useState<{ id: string; username: string; currentCredits: number } | null>(null);
   const [grantAmount, setGrantAmount] = useState<number>(100);
   const [grantReason, setGrantReason] = useState<string>("Manual owner adjustment");
@@ -1083,9 +1095,32 @@ function PlayersPanel() {
   };
 
   return (
-    <div className="chrome-panel p-4">
-      <h2 className="mb-2 text-lg font-bold">שחקנים ({sorted.length})</h2>
-      <div className="overflow-x-auto">
+    <div className="space-y-3 text-start">
+      <div className="chrome-panel flex items-center gap-2 p-2 rounded-2xl">
+        <button
+          onClick={() => setSubTab("players")}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
+            subTab === "players" ? "bg-primary text-primary-foreground shadow" : "bg-muted/60 text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          👥 שחקנים רשומים ({sorted.length})
+        </button>
+        <button
+          onClick={() => setSubTab("levels")}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
+            subTab === "levels" ? "bg-primary text-primary-foreground shadow" : "bg-muted/60 text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          🏆 בניית רמות והתקדמות (Levels Builder)
+        </button>
+      </div>
+
+      {subTab === "levels" ? (
+        <LevelsBuilderPanel />
+      ) : (
+        <div className="chrome-panel p-4">
+          <h2 className="mb-2 text-lg font-bold">שחקנים ({sorted.length})</h2>
+          <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="text-start text-muted-foreground">
             <tr>
@@ -1253,6 +1288,8 @@ function PlayersPanel() {
           </div>
         </div>
       )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1396,6 +1433,8 @@ function OrdersPanel() {
   const qc = useQueryClient();
   const [filter, setFilter] = useState<"all" | "awaiting_request" | "in_transit" | "delivered">("all");
   const [openGroup, setOpenGroup] = useState<OrderGroup | null>(null);
+  const [selectedGroupKeys, setSelectedGroupKeys] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   const { data: allRows = [] } = useQuery<OwnerOrder[]>({
     queryKey: ["own-orders"],
@@ -1462,6 +1501,53 @@ function OrdersPanel() {
     setOpenGroup(null);
   };
 
+  const deleteSelectedOrders = async () => {
+    const orderIdsToDelete: string[] = [];
+    for (const g of groups) {
+      if (selectedGroupKeys.has(g.key)) {
+        orderIdsToDelete.push(...g.orders.map((o) => o.id));
+      }
+    }
+    if (!orderIdsToDelete.length) return;
+    if (!confirm(`האם למחוק ${orderIdsToDelete.length} הזמנות לצמיתות?`)) return;
+
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from("orders").delete().in("id", orderIdsToDelete);
+      if (error) throw error;
+      toast.success("ההזמנות שנבחרו נמחקו בהצלחה");
+      setSelectedGroupKeys(new Set());
+      qc.invalidateQueries({ queryKey: ["own-orders"] });
+    } catch (err: any) {
+      toast.error(err.message || "שגיאה במחיקה");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const deleteSingleGroup = async (g: OrderGroup, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const ids = g.orders.map((o) => o.id);
+    if (!confirm(`למחוק את ${g.shipmentNumber ? `משלוח #${g.shipmentNumber}` : `הזמנה #${g.orders[0].order_number}`}?`)) return;
+    const { error } = await supabase.from("orders").delete().in("id", ids);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("נמחק בהצלחה");
+      qc.invalidateQueries({ queryKey: ["own-orders"] });
+      if (openGroup?.key === g.key) setOpenGroup(null);
+    }
+  };
+
+  const toggleGroupKey = (key: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedGroupKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const statusLabel = (s: string) => s === "awaiting_request" ? "ממתין" : s === "in_transit" ? "בדרך" : s === "delivered" ? "נמסר" : s;
   const statusColor = (s: string) => s === "delivered" ? "bg-green-500" : s === "in_transit" ? "bg-amber-500" : "bg-slate-400";
 
@@ -1475,21 +1561,39 @@ function OrdersPanel() {
   const { sorted: sortedGroups, SortHeader } = useSortableData(groups, { key: "createdAt", direction: "desc" });
 
   return (
-    <div className="chrome-panel p-4">
+    <div className="chrome-panel p-4 text-start">
       <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
         <h2 className="text-lg font-bold">📮 הזמנות ומשלוחים ({groups.length})</h2>
-        <div className="flex gap-1 flex-wrap">
-          {(["all", "awaiting_request", "in_transit", "delivered"] as const).map((f) => (
-            <button key={f} onClick={() => setFilter(f)} className={`chrome-panel px-2 py-1 text-[11px] ${filter === f ? "ring-2 ring-primary bg-primary/10" : ""}`}>
-              {f === "all" ? "הכל" : statusLabel(f)} · {counts[f]}
+        <div className="flex gap-2 flex-wrap items-center">
+          {selectedGroupKeys.size > 0 && (
+            <button
+              onClick={deleteSelectedOrders}
+              disabled={deleting}
+              className="rounded-xl bg-destructive px-3 py-1 text-xs font-bold text-destructive-foreground shadow hover:bg-destructive/90 disabled:opacity-50"
+            >
+              🗑️ מחק {selectedGroupKeys.size} נבחרים
             </button>
-          ))}
+          )}
+          <div className="flex gap-1 flex-wrap">
+            {(["all", "awaiting_request", "in_transit", "delivered"] as const).map((f) => (
+              <button key={f} onClick={() => setFilter(f)} className={`chrome-panel px-2 py-1 text-[11px] ${filter === f ? "ring-2 ring-primary bg-primary/10" : ""}`}>
+                {f === "all" ? "הכל" : statusLabel(f)} · {counts[f]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="text-start text-muted-foreground">
             <tr>
+              <th className="p-1 w-8">
+                <input
+                  type="checkbox"
+                  checked={groups.length > 0 && groups.every((g) => selectedGroupKeys.has(g.key))}
+                  onChange={(e) => setSelectedGroupKeys(e.target.checked ? new Set(groups.map((g) => g.key)) : new Set())}
+                />
+              </th>
               <SortHeader label="מספר" sortKey="shipmentNumber" />
               <SortHeader label="תאריך" sortKey="createdAt" />
               <SortHeader label="משתמש" sortKey="user" />
@@ -1498,7 +1602,7 @@ function OrdersPanel() {
               <SortHeader label="שיטה" sortKey="method" />
               <SortHeader label="כתובת" sortKey="address" />
               <SortHeader label="סטטוס" sortKey="status" />
-              <th className="p-1 text-start"></th>
+              <th className="p-1 text-center">פעולות</th>
             </tr>
           </thead>
           <tbody>
@@ -1510,6 +1614,13 @@ function OrdersPanel() {
                 : `${g.orders.length} פריטים`;
               return (
                 <tr key={g.key} className="cursor-pointer border-t border-border hover:bg-muted/50" onClick={() => setOpenGroup(g)}>
+                  <td className="p-1" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedGroupKeys.has(g.key)}
+                      onChange={(e) => toggleGroupKey(g.key, e as never)}
+                    />
+                  </td>
                   <td className="p-1 font-mono font-bold text-primary">{label}</td>
                   <td className="p-1">{new Date(g.createdAt).toLocaleDateString()}</td>
                   <td className="p-1">{g.user}</td>
@@ -1520,13 +1631,20 @@ function OrdersPanel() {
                   <td className="p-1 text-center">
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${statusColor(g.status)}`}>{statusLabel(g.status)}</span>
                   </td>
-                  <td className="p-1">
-                    <button className="rounded bg-muted px-2 py-0.5 text-[10px]">פרטים ←</button>
+                  <td className="p-1 flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    <button className="rounded bg-muted px-2 py-0.5 text-[10px]" onClick={() => setOpenGroup(g)}>פרטים ←</button>
+                    <button
+                      onClick={(e) => void deleteSingleGroup(g, e)}
+                      className="rounded p-1 text-destructive hover:bg-destructive/10"
+                      title="מחק הזמנה"
+                    >
+                      🗑️
+                    </button>
                   </td>
                 </tr>
               );
             })}
-            {!groups.length && <tr><td colSpan={9} className="p-4 text-center text-muted-foreground">אין הזמנות.</td></tr>}
+            {!groups.length && <tr><td colSpan={10} className="p-4 text-center text-muted-foreground">אין הזמנות.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -1741,6 +1859,9 @@ function OwnerMessages() {
   const qc = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [body, setBody] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 8;
 
   const { data: convs = [] } = useQuery({
     queryKey: ["owner-convs"],
@@ -1750,7 +1871,7 @@ function OwnerMessages() {
         .from("store_conversations")
         .select("id, subject, status, unread_owner, last_message_at, user_id, store_id, npc_id")
         .order("last_message_at", { ascending: false })
-        .limit(200);
+        .limit(300);
       return data ?? [];
     },
   });
@@ -1804,44 +1925,124 @@ function OwnerMessages() {
     qc.invalidateQueries({ queryKey: ["owner-convs"] });
   };
 
+  const deleteConversation = async (convId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!confirm("האם למחוק שיחה זו לצמיתות?")) return;
+    await supabase.from("conversation_messages").delete().eq("conversation_id", convId);
+    await supabase.from("store_conversations").delete().eq("id", convId);
+    toast.success("השיחה נמחקה בהצלחה");
+    if (activeId === convId) setActiveId(null);
+    qc.invalidateQueries({ queryKey: ["owner-convs"] });
+  };
+
+  const filteredConvs = convs.filter((c) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (c.subject || "").toLowerCase().includes(q) || (c.id || "").toLowerCase().includes(q);
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filteredConvs.length / PAGE_SIZE));
+  const pagedConvs = filteredConvs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   return (
-    <div className="grid gap-3 md:grid-cols-[320px_1fr]">
-      <div className="chrome-panel p-3">
-        <h2 className="mb-2 text-lg font-bold">{t("owner.tab.messages")}</h2>
-        <div className="space-y-1">
-          {convs.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setActiveId(c.id)}
-              className={`w-full rounded-xl px-3 py-2 text-start text-sm ${activeId === c.id ? "bg-primary/15 font-semibold" : "hover:bg-muted"}`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate">{c.subject ?? (c.store_id ? "Store" : "NPC")}</span>
-                {c.unread_owner > 0 && <span className="rounded-full bg-destructive px-2 py-0.5 text-[10px] font-bold text-destructive-foreground">{c.unread_owner}</span>}
+    <div className="grid gap-3 md:grid-cols-[340px_1fr] text-start">
+      <div className="chrome-panel p-3 flex flex-col justify-between">
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-base font-bold">{t("owner.tab.messages")} ({filteredConvs.length})</h2>
+          </div>
+          <input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="חיפוש שיחות…"
+            className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs mb-2 outline-none focus:border-primary"
+          />
+
+          <div className="space-y-1">
+            {pagedConvs.map((c) => (
+              <div
+                key={c.id}
+                onClick={() => setActiveId(c.id)}
+                className={`group flex items-center justify-between rounded-xl px-3 py-2 text-start text-xs cursor-pointer transition-all ${
+                  activeId === c.id ? "bg-primary/20 font-semibold border border-primary/40" : "hover:bg-muted/70 bg-muted/30"
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="truncate font-bold">{c.subject ?? (c.store_id ? "Store" : "NPC")}</span>
+                    {c.unread_owner > 0 && (
+                      <span className="rounded-full bg-destructive px-1.5 py-0.5 text-[9px] font-bold text-destructive-foreground">
+                        {c.unread_owner}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {new Date(c.last_message_at).toLocaleDateString()} · {c.status}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => deleteConversation(c.id, e)}
+                  className="ms-1.5 opacity-0 group-hover:opacity-100 p-1 text-destructive hover:bg-destructive/10 rounded transition-opacity"
+                  title="מחק שיחה"
+                >
+                  🗑️
+                </button>
               </div>
-              <div className="text-[10px] text-muted-foreground">
-                {new Date(c.last_message_at).toLocaleString()} · {c.status}
-              </div>
-            </button>
-          ))}
-          {!convs.length && <div className="p-2 text-xs text-muted-foreground">No pending messages.</div>}
+            ))}
+            {!filteredConvs.length && <div className="p-4 text-center text-xs text-muted-foreground">אין שיחות.</div>}
+          </div>
         </div>
+
+        {/* Pagination controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-border/50 pt-2 mt-3 text-xs">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-2 py-1 rounded bg-muted disabled:opacity-40"
+            >
+              ◀ הקודם
+            </button>
+            <span className="text-[11px] text-muted-foreground">
+              עמוד {page} מתוך {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-2 py-1 rounded bg-muted disabled:opacity-40"
+            >
+              הבא ▶
+            </button>
+          </div>
+        )}
       </div>
+
       <div className="chrome-panel flex min-h-[60vh] flex-col p-3">
         {activeId ? (
           <>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted px-3 py-2 text-xs">
               <div>
-                <div className="font-bold">{(activeConv as never as { username?: string } | null)?.username ?? "Player"}</div>
-                <div className="text-muted-foreground">
+                <div className="font-bold text-sm">{(activeConv as never as { username?: string } | null)?.username ?? "Player"}</div>
+                <div className="text-[11px] text-muted-foreground">
                   {(activeConv as never as { stores?: { name?: string }; npcs?: { name?: string } } | null)?.stores?.name
                     ?? (activeConv as never as { npcs?: { name?: string } } | null)?.npcs?.name
                     ?? "—"}
                 </div>
               </div>
-              <div className="flex gap-1">
-                <button onClick={() => setStatus("closed")} className="chrome-panel px-2 py-1">{t("msg.close")}</button>
-                <button onClick={() => setStatus("open")} className="chrome-panel px-2 py-1">{t("msg.reopen")}</button>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => setStatus("closed")} className="chrome-panel px-2.5 py-1 text-xs">{t("msg.close")}</button>
+                <button onClick={() => setStatus("open")} className="chrome-panel px-2.5 py-1 text-xs">{t("msg.reopen")}</button>
+                <button
+                  onClick={() => deleteConversation(activeId)}
+                  className="rounded-xl bg-destructive/15 text-destructive hover:bg-destructive/25 px-2.5 py-1 text-xs font-bold"
+                  title="מחק שיחה לצמיתות"
+                >
+                  🗑️ מחק שיחה
+                </button>
               </div>
             </div>
             <div className="flex-1 space-y-2 overflow-y-auto pb-2">

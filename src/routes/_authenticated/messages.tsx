@@ -153,8 +153,8 @@ function MessagesPage() {
         ) : activeId ? (
           <>
             <div className="flex-1 space-y-2 overflow-y-auto pb-2">
-              {messages.map((m) => (
-                <div key={m.id} className={`max-w-[70%] rounded-2xl px-3 py-2 text-sm ${m.sender_role === "owner" ? "bg-muted" : "ms-auto bg-primary text-primary-foreground"}`}>
+              {Array.from(new Map(messages.map((m) => [m.id, m])).values()).map((m, idx) => (
+                <div key={m.id || `msg-${idx}`} className={`max-w-[70%] rounded-2xl px-3 py-2 text-sm ${m.sender_role === "owner" ? "bg-muted" : "ms-auto bg-primary text-primary-foreground"}`}>
                   {m.body}
                   <div className="mt-1 text-[10px] opacity-70">{new Date(m.created_at).toLocaleString()}</div>
                 </div>

@@ -9,6 +9,7 @@ import {
   query,
   where,
   serverTimestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import {
   signInWithEmailAndPassword,
@@ -19,8 +20,37 @@ import {
   sendPasswordResetEmail,
   type User as FirebaseUser,
 } from "firebase/auth";
-import { db, auth, googleProvider } from "@/lib/firebase";
+import { db, auth, googleProvider, metaProvider, appleProvider } from "@/lib/firebase";
 import { gameDataStore } from "@/lib/gameDataStore";
+
+export function cleanForFirestore(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (Array.isArray(obj)) return obj.map(cleanForFirestore);
+  if (typeof obj === "object" && !(obj instanceof Date)) {
+    const res: Record<string, any> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== undefined) {
+        res[k] = cleanForFirestore(v);
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
+const SHARED_FIRESTORE_TABLES = new Set([
+  "active_players",
+  "products",
+  "vendors",
+  "orders",
+  "chat_messages",
+  "store_conversations",
+  "conversation_messages",
+  "auction_bids",
+  "game_settings",
+]);
+
+const lastFirestoreFetchTime: Record<string, number> = {};
 
 export interface User {
   id: string;
@@ -36,6 +66,53 @@ export interface Session {
 
 // In-memory channel registry for realtime broadcast simulation
 const activeChannels = new Map<string, Array<(payload: any) => void>>();
+
+type TableListener = {
+  table: string;
+  event: string;
+  filter?: string;
+  callback: (payload: any) => void;
+};
+const tableChangeListeners: TableListener[] = [];
+
+export function notifyTableChange(table: string, event: "INSERT" | "UPDATE" | "DELETE", newRow: any, oldRow?: any) {
+  const payload = {
+    schema: "public",
+    table,
+    commit_timestamp: new Date().toISOString(),
+    eventType: event,
+    new: newRow,
+    old: oldRow,
+    errors: null,
+  };
+
+  // 1. Notify table change listeners
+  for (const l of tableChangeListeners) {
+    if (l.table === table || l.table === "*") {
+      if (l.event === "*" || l.event === event) {
+        if (l.filter) {
+          const match = l.filter.match(/^([^=]+)=eq\.(.+)$/);
+          if (match) {
+            const field = match[1];
+            const targetVal = match[2];
+            const checkVal = newRow ? String(newRow[field]) : "";
+            if (checkVal !== targetVal) continue;
+          }
+        }
+        try {
+          l.callback(payload);
+        } catch (e) {
+          console.warn("Table listener error:", e);
+        }
+      }
+    }
+  }
+
+  // 2. Dispatch custom event for window
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("colt_table_change", { detail: payload }));
+  }
+}
 
 function mapFirebaseUser(user: FirebaseUser | null): User | null {
   if (!user) return null;
@@ -70,22 +147,32 @@ function setLocalStoredUser(user: User | null) {
 
 // Ensure active player profile exists with proper starter settings
 function ensureLocalProfile(uid: string, email?: string, username?: string) {
+  const isOwnerEmail =
+    email?.toLowerCase() === "coltcollect@gmail.com" ||
+    email?.toLowerCase() === "astratego@colt.market";
+
+  const originalOwnerProf = gameDataStore.getById("profiles", "d0aa9385-36c0-41eb-b8fc-ae43248c3556");
   const existing = gameDataStore.getById("profiles", uid);
-  const finalUsername = username || (email ? email.split("@")[0] : "Colt");
+  const finalUsername = isOwnerEmail ? "ColtCollect" : (username || (email ? email.split("@")[0] : "Colt"));
+  const defaultCredits = isOwnerEmail ? (originalOwnerProf?.credits ?? 9845) : 5;
+  const defaultXp = isOwnerEmail ? (originalOwnerProf?.xp ?? 225) : 0;
+  const defaultCharId = isOwnerEmail
+    ? (originalOwnerProf?.character_id || "d14fed03-b2c5-4205-b2ff-a151345151ee")
+    : "d7fc1b37-dae3-4bd0-bab1-3c21a4a51571";
   
   if (!existing) {
     gameDataStore.upsertRow("profiles", {
       id: uid,
       username: finalUsername,
-      display_name: finalUsername,
-      avatar_config: { _initialized: true },
-      character_id: "d7fc1b37-dae3-4bd0-bab1-3c21a4a51571", // מאיה
-      credits: 500,
+      display_name: isOwnerEmail ? "ColtCollect" : finalUsername,
+      avatar_config: isOwnerEmail ? (originalOwnerProf?.avatar_config || { _initialized: true }) : { _initialized: true },
+      character_id: defaultCharId,
+      credits: defaultCredits,
       level: 1,
-      xp: 0,
+      xp: defaultXp,
       active_title_id: null,
       current_map_id: "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9", // מפה ראשית
-      last_x: 1816,
+      last_x: isOwnerEmail ? 8524 : 1816,
       last_y: 576,
       is_suspended: false,
       is_muted: false,
@@ -93,20 +180,23 @@ function ensureLocalProfile(uid: string, email?: string, username?: string) {
       settings: {},
     });
   } else {
-    // If existing profile was empty or uninitialized, repair it
-    if (!existing.avatar_config || Object.keys(existing.avatar_config).length === 0) {
+    // If existing profile was empty or uninitialized or owner got downgraded
+    if (isOwnerEmail && (existing.credits < 1000 || existing.credits == null || existing.username === "Player" || existing.username?.startsWith("guest_"))) {
       gameDataStore.updateRow("profiles", uid, {
-        avatar_config: { _initialized: true },
-        character_id: existing.character_id || "d7fc1b37-dae3-4bd0-bab1-3c21a4a51571",
-        current_map_id: existing.current_map_id || "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9",
+        username: "ColtCollect",
+        display_name: "ColtCollect",
+        credits: originalOwnerProf?.credits ?? 9845,
+        xp: originalOwnerProf?.xp ?? 225,
+        character_id: defaultCharId,
+        avatar_config: originalOwnerProf?.avatar_config || { _initialized: true },
+        email_verified: true,
       });
     }
   }
 
   // Grant admin & owner if email matches owner
-  const isOwnerEmail = email === "coltcollect@gmail.com" || email === "astratego@colt.market";
   if (isOwnerEmail) {
-    gameDataStore.upsertRow("admins", { id: uid, user_id: uid, email });
+    gameDataStore.upsertRow("admins", { id: uid, user_id: uid, email: email || "coltcollect@gmail.com" });
     gameDataStore.upsertRow("user_roles", { id: `owner_${uid}`, user_id: uid, role: "owner" });
     gameDataStore.upsertRow("user_roles", { id: `admin_${uid}`, user_id: uid, role: "admin" });
   } else {
@@ -119,6 +209,7 @@ class QueryBuilder {
   private opType: "select" | "insert" | "upsert" | "update" | "delete" = "select";
   private payload: any = null;
   private selectFields: string = "*";
+  private selectOptions?: { count?: "exact" | "planned" | "estimated"; head?: boolean };
   private filters: Array<{ field: string; op: string; value: any }> = [];
   private orConditions: string[] = [];
   private orderField?: string;
@@ -131,8 +222,9 @@ class QueryBuilder {
     this.colName = colName;
   }
 
-  select(_fields = "*") {
+  select(_fields = "*", options?: { count?: "exact" | "planned" | "estimated"; head?: boolean }) {
     this.selectFields = _fields;
+    this.selectOptions = options;
     if (this.opType !== "insert" && this.opType !== "upsert" && this.opType !== "update" && this.opType !== "delete") {
       this.opType = "select";
     }
@@ -261,7 +353,7 @@ class QueryBuilder {
     return this;
   }
 
-  private async execute(): Promise<{ data: any | null; error: Error | null }> {
+  private async execute(): Promise<{ data: any | null; count?: number; error: Error | null }> {
     try {
       if (this.opType === "insert" || this.opType === "upsert") {
         const records = Array.isArray(this.payload) ? this.payload : [this.payload];
@@ -269,14 +361,18 @@ class QueryBuilder {
         for (const rec of records) {
           const saved = gameDataStore.upsertRow(this.colName, rec);
           inserted.push(saved);
+          notifyTableChange(this.colName, "INSERT", saved);
 
-          // Asynchronously attempt to sync to Firestore in background without breaking on quota
-          try {
-            const docRef = doc(db, this.colName, String(saved.id));
-            setDoc(docRef, saved, { merge: true }).catch(() => {});
-          } catch {}
+          if (SHARED_FIRESTORE_TABLES.has(this.colName)) {
+            try {
+              const docRef = doc(db, this.colName, String(saved.id));
+              await setDoc(docRef, cleanForFirestore(saved), { merge: true });
+            } catch (err) {
+              console.warn(`Firestore sync error on ${this.colName}:`, err);
+            }
+          }
         }
-        return { data: Array.isArray(this.payload) ? inserted : inserted[0], error: null };
+        return { data: Array.isArray(this.payload) ? inserted : inserted[0], count: inserted.length, error: null };
       }
 
       if (this.opType === "delete") {
@@ -284,40 +380,88 @@ class QueryBuilder {
         if (matched && matched.length > 0) {
           for (const item of matched) {
             gameDataStore.deleteRow(this.colName, item.id);
-            try {
-              deleteDoc(doc(db, this.colName, String(item.id))).catch(() => {});
-            } catch {}
+            notifyTableChange(this.colName, "DELETE", null, item);
+            if (SHARED_FIRESTORE_TABLES.has(this.colName)) {
+              try {
+                await deleteDoc(doc(db, this.colName, String(item.id)));
+              } catch {}
+            }
           }
         }
-        return { data: null, error: null };
+        return { data: null, count: matched?.length || 0, error: null };
       }
 
       if (this.opType === "update") {
         const { data: matched } = await this.fetchDocs();
         if (matched && matched.length > 0) {
           for (const item of matched) {
-            gameDataStore.updateRow(this.colName, item.id, this.payload);
-            try {
-              updateDoc(doc(db, this.colName, String(item.id)), {
-                ...this.payload,
-                updated_at: new Date().toISOString(),
-              }).catch(() => {});
-            } catch {}
+            const updated = gameDataStore.updateRow(this.colName, item.id, this.payload);
+            notifyTableChange(this.colName, "UPDATE", updated, item);
+            if (SHARED_FIRESTORE_TABLES.has(this.colName)) {
+              try {
+                const docRef = doc(db, this.colName, String(item.id));
+                await setDoc(docRef, cleanForFirestore({
+                  ...item,
+                  ...this.payload,
+                  updated_at: new Date().toISOString(),
+                }), { merge: true });
+              } catch (err) {
+                console.warn(`Firestore update sync error on ${this.colName}:`, err);
+              }
+            }
           }
         }
-        return { data: this.payload, error: null };
+        return { data: this.payload, count: matched?.length || 0, error: null };
       }
 
       // Default select
       return await this.fetchDocs();
     } catch (err) {
       console.warn(`[LocalStore ${this.opType} on ${this.colName}]`, err);
-      return { data: null, error: err as Error };
+      return { data: null, count: 0, error: err as Error };
     }
   }
 
-  private async fetchDocs(): Promise<{ data: any[] | null; error: Error | null }> {
+  private async fetchDocs(): Promise<{ data: any[] | null; count: number; error: Error | null }> {
     try {
+      // Sync from shared Firestore collection if applicable
+      if (typeof window !== "undefined" && SHARED_FIRESTORE_TABLES.has(this.colName)) {
+        const lastFetch = lastFirestoreFetchTime[this.colName] || 0;
+        const ttl = this.colName === "active_players" ? 2000 : 4000;
+        if (Date.now() - lastFetch > ttl) {
+          lastFirestoreFetchTime[this.colName] = Date.now();
+          try {
+            const snap = await getDocs(collection(db, this.colName));
+            if (!snap.empty) {
+              for (const d of snap.docs) {
+                const row = { ...d.data(), id: d.id };
+                gameDataStore.upsertRow(this.colName, row);
+              }
+            }
+          } catch (e) {
+            console.warn(`Firestore read sync error on ${this.colName}:`, e);
+          }
+        }
+
+        // When fetching products or queries needing vendors, also ensure vendors are synced
+        if (this.colName === "products" || (this.selectFields && this.selectFields.includes("vendors"))) {
+          const lastVendorFetch = lastFirestoreFetchTime["vendors"] || 0;
+          if (Date.now() - lastVendorFetch > 4000) {
+            lastFirestoreFetchTime["vendors"] = Date.now();
+            try {
+              const vSnap = await getDocs(collection(db, "vendors"));
+              if (!vSnap.empty) {
+                for (const d of vSnap.docs) {
+                  gameDataStore.upsertRow("vendors", { ...d.data(), id: d.id });
+                }
+              }
+            } catch (e) {
+              console.warn("Firestore vendors read sync error:", e);
+            }
+          }
+        }
+      }
+
       // Get complete array from local resilient store
       const allRows = gameDataStore.getTable(this.colName);
       let list = [...allRows];
@@ -411,6 +555,8 @@ class QueryBuilder {
         });
       }
 
+      const totalMatching = list.length;
+
       // Apply range & limit
       if (typeof this.rangeFrom === "number" && typeof this.rangeTo === "number") {
         list = list.slice(this.rangeFrom, this.rangeTo + 1);
@@ -457,34 +603,51 @@ class QueryBuilder {
             }
           }
         }
+
+        if (this.selectFields.includes("vendors(") || this.selectFields.includes("vendors.")) {
+          for (const item of list) {
+            if (item.vendor_id && !item.vendors) {
+              const vData = gameDataStore.getById("vendors", item.vendor_id);
+              if (vData) {
+                item.vendors = { id: vData.id, shop_name: vData.shop_name || "ונדור", user_id: vData.user_id };
+              } else {
+                item.vendors = { id: item.vendor_id, shop_name: "ונדור רשום", user_id: "" };
+              }
+            }
+          }
+        }
       }
 
-      return { data: list, error: null };
+      if (this.selectOptions?.head) {
+        return { data: null, count: totalMatching, error: null };
+      }
+
+      return { data: list, count: totalMatching, error: null };
     } catch (err) {
       console.warn(`[LocalStore fetchDocs on ${this.colName}]`, err);
-      return { data: [], error: err as Error };
+      return { data: [], count: 0, error: err as Error };
     }
   }
 
-  async maybeSingle(): Promise<{ data: any | null; error: Error | null }> {
+  async maybeSingle(): Promise<{ data: any | null; count?: number; error: Error | null }> {
     this.limitCount = 1;
     const res = await this.execute();
-    if (res.error) return { data: null, error: res.error };
+    if (res.error) return { data: null, count: 0, error: res.error };
     const arr = Array.isArray(res.data) ? res.data : [res.data];
-    return { data: arr && arr.length > 0 ? arr[0] : null, error: null };
+    return { data: arr && arr.length > 0 ? arr[0] : null, count: res.count, error: null };
   }
 
-  async single(): Promise<{ data: any | null; error: Error | null }> {
+  async single(): Promise<{ data: any | null; count?: number; error: Error | null }> {
     this.limitCount = 1;
     const res = await this.execute();
-    if (res.error) return { data: null, error: res.error };
+    if (res.error) return { data: null, count: 0, error: res.error };
     const arr = Array.isArray(res.data) ? res.data : [res.data];
-    if (!arr || arr.length === 0 || !arr[0]) return { data: null, error: new Error("No rows found") };
-    return { data: arr[0], error: null };
+    if (!arr || arr.length === 0 || !arr[0]) return { data: null, count: 0, error: new Error("No rows found") };
+    return { data: arr[0], count: res.count, error: null };
   }
 
   then<TResult1 = any, TResult2 = never>(
-    onfulfilled?: ((value: { data: any | null; error: Error | null }) => TResult1 | PromiseLike<TResult1>) | undefined | null,
+    onfulfilled?: ((value: { data: any | null; count?: number; error: Error | null }) => TResult1 | PromiseLike<TResult1>) | undefined | null,
     onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null
   ): Promise<TResult1 | TResult2> {
     return this.execute().then(onfulfilled, onrejected);
@@ -492,7 +655,7 @@ class QueryBuilder {
 }
 
 // Current active auth state
-let currentAuthUser: User | null = null;
+let currentAuthUser: User | null = getLocalStoredUser();
 const authListeners = new Set<(event: string, session: Session | null) => void>();
 
 function notifyAuthChange(event: string, session: Session | null) {
@@ -541,22 +704,33 @@ export const supabase = {
       if (funcName === "get_public_profiles") {
         const ids: string[] = Array.isArray(params._ids) ? params._ids : [];
         if (ids.length === 0) return { data: [], error: null };
-        const results = ids.map((uid) => {
-          const d = gameDataStore.getById("profiles", uid);
-          if (d) {
-            return {
-              id: uid,
-              username: d.username || "Player",
-              display_name: d.display_name || d.username || "Player",
-              avatar_config: d.avatar_config || {},
-              character_id: d.character_id || null,
-              level: d.level || 1,
-              xp: d.xp || 0,
-              active_title_id: d.active_title_id || null,
-            };
-          }
-          return { id: uid, username: "Player", display_name: "Player", avatar_config: {}, character_id: null, level: 1, xp: 0 };
-        });
+        const results = await Promise.all(
+          ids.map(async (uid) => {
+            let d = gameDataStore.getById("profiles", uid);
+            if (!d) {
+              try {
+                const snap = await getDoc(doc(db, "profiles", uid));
+                if (snap.exists()) {
+                  d = { ...snap.data(), id: uid };
+                  gameDataStore.upsertRow("profiles", d);
+                }
+              } catch {}
+            }
+            if (d) {
+              return {
+                id: uid,
+                username: d.username || "Player",
+                display_name: d.display_name || d.username || "Player",
+                avatar_config: d.avatar_config || {},
+                character_id: d.character_id || null,
+                level: d.level || 1,
+                xp: d.xp || 0,
+                active_title_id: d.active_title_id || null,
+              };
+            }
+            return { id: uid, username: "Player", display_name: "Player", avatar_config: {}, character_id: null, level: 1, xp: 0 };
+          })
+        );
         return { data: results, error: null };
       }
 
@@ -582,17 +756,46 @@ export const supabase = {
       if (funcName === "progress_quest") {
         const action = params._action_type;
         const amount = params._amount || 1;
-        const pqId = `${activeUser.id}_${action}`;
-        const existing = gameDataStore.getById("player_quests", pqId);
-        const current = existing ? existing.progress || 0 : 0;
-        const updated = gameDataStore.upsertRow("player_quests", {
-          id: pqId,
-          user_id: activeUser.id,
-          quest_id: action,
-          progress: current + amount,
-          updated_at: new Date().toISOString(),
+        const allQuests = gameDataStore.getTable("quests").filter((q) => q.active !== false);
+        const matching = allQuests.filter((q) => {
+          const act = (q.action_type || "").toLowerCase();
+          const slug = (q.slug || "").toLowerCase();
+          const name = (q.name || "").toLowerCase();
+          if (action === "visit_store" || action === "visit_stores") {
+            return act === "visit_store" || slug.includes("store") || name.includes("חנות") || name.includes("חנויות");
+          }
+          if (action === "visit_npc") {
+            return act === "visit_npc" || slug.includes("npc") || name.includes("npc") || name.includes("מדריך");
+          }
+          if (action === "login") {
+            return act === "login" || slug.includes("login") || name.includes("התחברות");
+          }
+          if (action === "spin_wheel") {
+            return act === "spin_wheel" || slug.includes("spin") || name.includes("גלגל");
+          }
+          if (action === "chat" || action === "send_chat") {
+            return act === "chat" || slug.includes("chat") || name.includes("שלום") || name.includes("צ'אט");
+          }
+          return act === action || q.id === action;
         });
-        return { data: { ok: true, progress: updated.progress }, error: null };
+
+        for (const q of matching) {
+          const qId = q.id;
+          const pqId = `${activeUser.id}_${qId}`;
+          const existing = gameDataStore.getById("player_quests", pqId);
+          const prev = Number(existing?.progress) || 0;
+          const target = Number(q.target_amount) || 1;
+          const next = Math.min(target, prev + amount);
+          gameDataStore.upsertRow("player_quests", {
+            id: pqId,
+            user_id: activeUser.id,
+            quest_id: qId,
+            progress: next,
+            period_key: q.quest_type === "daily" ? new Date().toISOString().slice(0, 10) : "once",
+            updated_at: new Date().toISOString(),
+          });
+        }
+        return { data: { ok: true }, error: null };
       }
 
       if (funcName === "claim_quest_reward") {
@@ -958,28 +1161,24 @@ export const supabase = {
   },
 
   auth: {
-    async signInAsGuest(username?: string) {
-      const guestId = "guest_" + Math.random().toString(36).substring(2, 9);
-      const guestName = username || "שחקן קולט";
-      const guestUser: User = {
-        id: guestId,
-        email: `${guestId}@colt.local`,
-        user_metadata: { username: guestName },
-        app_metadata: {},
-      };
-      currentAuthUser = guestUser;
-      setLocalStoredUser(guestUser);
-      ensureLocalProfile(guestId, guestUser.email, guestName);
-      notifyAuthChange("SIGNED_IN", { access_token: "guest-token", user: guestUser });
+    async signInAsGuest() {
       return {
-        data: { user: guestUser, session: { access_token: "guest-token", user: guestUser } },
-        error: null,
+        data: { user: null, session: null },
+        error: new Error("כניסה כאורח מבוטלת. יש להתחבר או ליצור חשבון כדי לשחק."),
       };
     },
 
-    async signInWithOAuth(_params?: { provider?: string }) {
+    async signInWithOAuth(params?: { provider?: string }) {
+      const p = (params?.provider || "google").toLowerCase();
+      let selectedProvider: any = googleProvider;
+      if (p === "facebook" || p === "meta") {
+        selectedProvider = metaProvider;
+      } else if (p === "apple" || p === "apple.com") {
+        selectedProvider = appleProvider;
+      }
+
       try {
-        const cred = await signInWithPopup(auth, googleProvider);
+        const cred = await signInWithPopup(auth, selectedProvider);
         const mapped = mapFirebaseUser(cred.user)!;
         currentAuthUser = mapped;
         setLocalStoredUser(mapped);
@@ -991,20 +1190,25 @@ export const supabase = {
           data: { user: mapped, session: { access_token: token, user: mapped } },
           error: null,
         };
-      } catch (err) {
-        // Fallback to guest / local sign-in if popup is blocked or offline
-        console.warn("OAuth sign-in fallback:", err);
-        return this.signInAsGuest("אורח COLT");
+      } catch (err: any) {
+        console.warn(`OAuth sign-in popup error for ${p}:`, err);
+        return { data: { user: null, session: null }, error: err };
       }
     },
 
     async signInWithPassword({ email, password }: { email: string; password: string }) {
+      const isOwnerLogin =
+        email.toLowerCase() === "coltcollect@gmail.com" ||
+        email.toLowerCase() === "coltcollect" ||
+        email.toLowerCase() === "astratego@colt.market";
+
       try {
-        const cred = await signInWithEmailAndPassword(auth, email, password);
+        const loginEmail = email.includes("@") ? email : `${email}@colt.local`;
+        const cred = await signInWithEmailAndPassword(auth, loginEmail, password);
         const mapped = mapFirebaseUser(cred.user)!;
         currentAuthUser = mapped;
         setLocalStoredUser(mapped);
-        ensureLocalProfile(mapped.id, mapped.email, mapped.user_metadata?.username);
+        ensureLocalProfile(mapped.id, mapped.email, isOwnerLogin ? "ColtCollect" : mapped.user_metadata?.username);
         const token = await cred.user.getIdToken();
         notifyAuthChange("SIGNED_IN", { access_token: token, user: mapped });
 
@@ -1013,15 +1217,6 @@ export const supabase = {
           error: null,
         };
       } catch (err) {
-        // If user already exists locally in profiles, authenticate locally
-        const existingProf = gameDataStore.getTable("profiles").find((p) => p.username === email || p.id === email);
-        if (existingProf) {
-          const localUser: User = { id: existingProf.id, email, user_metadata: { username: existingProf.username } };
-          currentAuthUser = localUser;
-          setLocalStoredUser(localUser);
-          notifyAuthChange("SIGNED_IN", { access_token: "local-token", user: localUser });
-          return { data: { user: localUser, session: { access_token: "local-token", user: localUser } }, error: null };
-        }
         return { data: { user: null, session: null }, error: err as Error };
       }
     },
@@ -1062,6 +1257,12 @@ export const supabase = {
       } catch {}
       currentAuthUser = null;
       setLocalStoredUser(null);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.removeItem(LOCAL_SESSION_KEY);
+          sessionStorage.clear();
+        } catch {}
+      }
       notifyAuthChange("SIGNED_OUT", null);
       return { error: null };
     },
@@ -1124,15 +1325,24 @@ export const supabase = {
   },
 
   channel(channelName: string, _opts?: any) {
-    type Listener = { event: string; filter?: any; callback: (payload: any) => void };
-    const listeners: Listener[] = [];
-
     const chObj = {
-      on(event: string, filter: any, callback?: (payload: any) => void) {
-        const cb = typeof filter === "function" ? filter : callback;
-        const f = typeof filter === "object" ? filter : undefined;
+      on(event: string, filterOrCb: any, callback?: (payload: any) => void) {
+        if (event === "postgres_changes") {
+          const opts = typeof filterOrCb === "object" ? filterOrCb : {};
+          const cb = typeof filterOrCb === "function" ? filterOrCb : callback;
+          if (cb) {
+            const listener: TableListener = {
+              table: opts.table || "*",
+              event: opts.event || "*",
+              filter: opts.filter,
+              callback: cb,
+            };
+            tableChangeListeners.push(listener);
+          }
+          return chObj;
+        }
+        const cb = typeof filterOrCb === "function" ? filterOrCb : callback;
         if (cb) {
-          listeners.push({ event, filter: f, callback: cb });
           let list = activeChannels.get(channelName);
           if (!list) {
             list = [];
@@ -1171,13 +1381,79 @@ export const supabase = {
   removeChannel(_channel: any) {},
 
   storage: {
-    from(_bucketName: string) {
+    from(bucketName: string) {
       return {
-        async upload(filePath: string, file: any) {
-          return { data: { path: filePath }, error: null };
+        async upload(filePath: string, file: any, _options?: any) {
+          try {
+            let dataUrl = "";
+            if (file instanceof Blob || (typeof File !== "undefined" && file instanceof File)) {
+              dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+              });
+            } else if (typeof file === "string") {
+              dataUrl = file;
+            }
+            if (dataUrl) {
+              try {
+                sessionStorage.setItem(`storage_${bucketName}_${filePath}`, dataUrl);
+              } catch {}
+            }
+            return { data: { path: filePath, fullPath: `${bucketName}/${filePath}` }, error: null };
+          } catch (err: any) {
+            return { data: null, error: err };
+          }
+        },
+        async createSignedUrl(filePath: string, _expiresIn?: number) {
+          let url = "";
+          try {
+            url = sessionStorage.getItem(`storage_${bucketName}_${filePath}`) || "";
+          } catch {}
+          if (!url) {
+            url = filePath.startsWith("http") || filePath.startsWith("data:")
+              ? filePath
+              : `https://live.colt-collectibles.com/${filePath}`;
+          }
+          return { data: { signedUrl: url }, error: null };
+        },
+        async createSignedUrls(paths: string[], _expiresIn?: number) {
+          const data = paths.map((p) => {
+            let url = "";
+            try {
+              url = sessionStorage.getItem(`storage_${bucketName}_${p}`) || "";
+            } catch {}
+            return {
+              error: null,
+              path: p,
+              signedUrl: url || (p.startsWith("http") ? p : `https://live.colt-collectibles.com/${p}`),
+            };
+          });
+          return { data, error: null };
         },
         getPublicUrl(filePath: string) {
-          return { data: { publicUrl: filePath.startsWith("http") ? filePath : `https://live.colt-collectibles.com/${filePath}` } };
+          let url = "";
+          try {
+            url = sessionStorage.getItem(`storage_${bucketName}_${filePath}`) || "";
+          } catch {}
+          if (!url) {
+            url = filePath.startsWith("http") || filePath.startsWith("data:")
+              ? filePath
+              : `https://live.colt-collectibles.com/${filePath}`;
+          }
+          return { data: { publicUrl: url } };
+        },
+        async remove(paths: string[]) {
+          paths.forEach((p) => {
+            try {
+              sessionStorage.removeItem(`storage_${bucketName}_${p}`);
+            } catch {}
+          });
+          return { data: paths.map((p) => ({ name: p })), error: null };
+        },
+        async list(_folder?: string, _options?: any) {
+          return { data: [], error: null };
         },
       };
     },

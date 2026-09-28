@@ -41,6 +41,7 @@ type VendorProduct = {
   stock: number | null;
   vendor_status: string;
   store_id: string | null;
+  store_ids: string[] | null;
   created_at: string;
 };
 
@@ -209,6 +210,7 @@ const EXCEL_FIELDS = [
 
 function VendorDashboard({ vendor }: { vendor: Vendor }) {
   const qc = useQueryClient();
+  const [activeTab, setActiveTab] = useState<"products" | "orders">("products");
   const [showForm, setShowForm] = useState(false);
 
   const { data: products = [], isLoading } = useQuery({
@@ -216,11 +218,40 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, name, image_url, category, subcategory, description, set_name, tags, credit_price, stock, vendor_status, store_id, created_at")
+        .select("id, name, image_url, category, subcategory, description, set_name, tags, credit_price, stock, vendor_status, store_id, store_ids, created_at")
         .eq("vendor_id", vendor.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as VendorProduct[];
+    },
+  });
+
+  const { data: allStores = [] } = useQuery({
+    queryKey: ["vendor-stores-lookup"],
+    queryFn: async () => (await supabase.from("stores").select("id, name")).data ?? [],
+  });
+
+  const storeMap = useMemo(() => new Map(allStores.map((s: { id: string; name: string }) => [s.id, s.name])), [allStores]);
+
+  const { data: vendorOrders = [], isLoading: isLoadingOrders } = useQuery({
+    queryKey: ["vendor-orders", vendor.id],
+    queryFn: async () => {
+      // Find orders of products that belong to this vendor
+      const { data: myProducts } = await supabase
+        .from("products")
+        .select("id")
+        .eq("vendor_id", vendor.id);
+      
+      const pIds = (myProducts ?? []).map((p) => p.id);
+      if (!pIds.length) return [];
+
+      const { data: ords } = await supabase
+        .from("orders")
+        .select("id, order_number, shipment_number, product_id, quantity, credits_charged, fulfillment_status, created_at, vendor_shipped, products(name, sku, image_url, category, set_name)")
+        .in("product_id", pIds)
+        .order("created_at", { ascending: false });
+
+      return (ords ?? []) as any[];
     },
   });
 
@@ -231,7 +262,10 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
   });
 
   const existingNames = useMemo(() => new Set(products.map((p) => p.name.trim().toLowerCase())), [products]);
-  const refresh = () => qc.invalidateQueries({ queryKey: ["vendor-products", vendor.id] });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["vendor-products", vendor.id] });
+    qc.invalidateQueries({ queryKey: ["vendor-orders", vendor.id] });
+  };
 
   const remove = async (p: VendorProduct) => {
     if (p.vendor_status !== "pending") {
@@ -245,10 +279,26 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
     refresh();
   };
 
+  const toggleVendorShipped = async (orderId: string, currentVal: boolean) => {
+    const newVal = !currentVal;
+    const { error } = await supabase
+      .from("orders")
+      .update({ vendor_shipped: newVal })
+      .eq("id", orderId);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(newVal ? "סומן כנשלח להנהלת COLT 📦" : "סומן כממתין למשלוח להנהלה");
+    refresh();
+  };
+
   const counts = {
     pending: products.filter((p) => p.vendor_status === "pending").length,
     approved: products.filter((p) => p.vendor_status === "approved").length,
     rejected: products.filter((p) => p.vendor_status === "rejected").length,
+    orders: vendorOrders.length,
+    ordersPendingShip: vendorOrders.filter((o) => !o.vendor_shipped).length,
   };
 
   return (
@@ -257,30 +307,58 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
         <div>
           <h1 className="text-lg font-black">🏪 {vendor.shop_name || "החנות שלי"}</h1>
           <p className="text-xs text-muted-foreground">
-            ממתינים לאישור: {counts.pending} · מאושרים: {counts.approved} · נדחו: {counts.rejected}
+            מוצרים: {products.length} (מאושרים: {counts.approved}) · הזמנות שבוצעו: {counts.orders} {counts.ordersPendingShip > 0 && <span className="text-amber-600 font-bold">({counts.ordersPendingShip} ממתינות למשלוח להנהלה)</span>}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button onClick={() => setShowForm((v) => !v)} className="rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow">
-            {showForm ? "סגירת הטופס" : "➕ העלאת מוצר"}
+
+        {/* Tab switcher */}
+        <div className="flex items-center gap-1.5 rounded-xl bg-muted/60 p-1 border border-border">
+          <button
+            onClick={() => setActiveTab("products")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+              activeTab === "products" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            📦 ניהול מוצרים ({products.length})
           </button>
           <button
-            onClick={() =>
-              downloadTemplate(
-                "vendor-products",
-                EXCEL_FIELDS.map((f) => f.key),
-                { name: "Charizard Base Set", category: "פוקימון", credit_price: 500, image_url: "https://…/card.jpg", stock: 1, description: "", set_name: "Base Set", tags: "holo,vintage" },
-              )
-            }
-            className="chrome-panel px-2 py-1.5 text-xs"
+            onClick={() => setActiveTab("orders")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === "orders" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+            }`}
           >
-            📥 תבנית Excel
+            🧾 הזמנות למשלוח ({vendorOrders.length})
+            {counts.ordersPendingShip > 0 && (
+              <span className="grid h-4 w-4 place-items-center rounded-full bg-destructive text-[10px] text-white">
+                {counts.ordersPendingShip}
+              </span>
+            )}
           </button>
-          <ExcelImport vendorId={vendor.id} existingNames={existingNames} onDone={refresh} />
         </div>
+
+        {activeTab === "products" && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button onClick={() => setShowForm((v) => !v)} className="rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow">
+              {showForm ? "סגירת הטופס" : "➕ העלאת מוצר"}
+            </button>
+            <button
+              onClick={() =>
+                downloadTemplate(
+                  "vendor-products",
+                  EXCEL_FIELDS.map((f) => f.key),
+                  { name: "Charizard Base Set", category: "פוקימון", credit_price: 500, image_url: "https://…/card.jpg", stock: 1, description: "", set_name: "Base Set", tags: "holo,vintage" },
+                )
+              }
+              className="chrome-panel px-2 py-1.5 text-xs"
+            >
+              📥 תבנית Excel
+            </button>
+            <ExcelImport vendorId={vendor.id} existingNames={existingNames} onDone={refresh} />
+          </div>
+        )}
       </div>
 
-      {showForm && (
+      {activeTab === "products" && showForm && (
         <ProductForm
           vendorId={vendor.id}
           categories={categories.map((c) => c.name)}
@@ -289,39 +367,186 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
         />
       )}
 
-      <div className="chrome-panel rounded-2xl p-4">
-        <div className="mb-2 text-sm font-bold">המוצרים שלי</div>
-        {isLoading ? (
-          <div className="text-sm text-muted-foreground">טוען…</div>
-        ) : !products.length ? (
-          <div className="rounded-xl border-2 border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            עדיין לא העליתם מוצרים. התחילו ב״העלאת מוצר״ או בייבוא מקובץ Excel.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {products.map((p) => {
-              const st = STATUS_LABEL[p.vendor_status] ?? { label: p.vendor_status, cls: "bg-muted" };
-              return (
-                <div key={p.id} className="flex items-center gap-3 rounded-xl border-2 border-border bg-white/60 p-2">
-                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border bg-white">
-                    {p.image_url ? <img src={p.image_url} alt={p.name} className="h-full w-full object-contain" /> : <div className="grid h-full w-full place-items-center text-xs text-muted-foreground">—</div>}
+      {activeTab === "products" && (
+        <div className="chrome-panel rounded-2xl p-4">
+          <div className="mb-2 text-sm font-bold">המוצרים שלי</div>
+          {isLoading ? (
+            <div className="text-sm text-muted-foreground">טוען…</div>
+          ) : !products.length ? (
+            <div className="rounded-xl border-2 border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+              עדיין לא העליתם מוצרים. התחילו ב״העלאת מוצר״ או בייבוא מקובץ Excel.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {products.map((p) => {
+                const isApproved = p.vendor_status === "approved";
+                const isPending = p.vendor_status === "pending";
+                const isRejected = p.vendor_status === "rejected";
+
+                const assignedStoreIds = Array.from(
+                  new Set([
+                    ...(p.store_id ? [p.store_id] : []),
+                    ...(Array.isArray(p.store_ids) ? p.store_ids : []),
+                  ])
+                );
+                const assignedStoreNames = assignedStoreIds
+                  .map((sid) => storeMap.get(sid))
+                  .filter(Boolean) as string[];
+
+                return (
+                  <div
+                    key={p.id}
+                    className={`flex flex-wrap sm:flex-nowrap items-center gap-3 rounded-2xl border-2 p-3 transition-all ${
+                      isApproved
+                        ? "border-emerald-500/40 bg-emerald-500/5 dark:bg-emerald-950/20"
+                        : isPending
+                        ? "border-amber-500/40 bg-amber-500/5 dark:bg-amber-950/20"
+                        : "border-red-500/40 bg-red-500/5 dark:bg-red-950/20"
+                    }`}
+                  >
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+                      {p.image_url ? (
+                        <img src={p.image_url} alt={p.name} className="h-full w-full object-contain" />
+                      ) : (
+                        <div className="grid h-full w-full place-items-center text-xs text-muted-foreground">—</div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate text-sm font-black text-foreground">{p.name}</span>
+                        {isApproved && (
+                          <span className="rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-black flex items-center gap-1">
+                            <span>✅</span> מאושר ביריד
+                          </span>
+                        )}
+                        {isPending && (
+                          <span className="rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-0.5 text-[10px] font-black flex items-center gap-1">
+                            <span>⏳</span> ממתין לאישור הנהלה
+                          </span>
+                        )}
+                        {isRejected && (
+                          <span className="rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 px-2 py-0.5 text-[10px] font-black flex items-center gap-1">
+                            <span>❌</span> לא אושר
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-[11px] text-muted-foreground">
+                        {p.category ?? "—"}{p.set_name ? ` · סט: ${p.set_name}` : ""} · 💎 מחיר: <span className="font-bold text-primary">{p.credit_price}</span> · מלאי: <span className="font-bold">{p.stock ?? "∞"}</span>
+                      </div>
+
+                      {/* Store placement info */}
+                      {isApproved && (
+                        <div className="text-xs mt-1">
+                          {assignedStoreNames.length > 0 ? (
+                            <span className="inline-flex flex-wrap items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                              <span>🏪</span> מוצג בחנויות:{" "}
+                              <span className="font-bold text-foreground">{assignedStoreNames.join(", ")}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium bg-amber-500/10 px-2 py-0.5 rounded-lg">
+                              <span>⏳</span> מאושר, ממתין לשיבוץ בחנות ע"י ההנהלה
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {isPending && (
+                      <button
+                        onClick={() => void remove(p)}
+                        className="rounded-lg bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-bold px-2.5 py-1 transition-all"
+                      >
+                        מחיקה
+                      </button>
+                    )}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-bold">{p.name}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">
-                      {p.category ?? "—"}{p.set_name ? ` · ${p.set_name}` : ""} · 💎 {p.credit_price} · מלאי {p.stock ?? "∞"}
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* -------------------- VENDOR ORDERS PORTAL -------------------- */}
+      {activeTab === "orders" && (
+        <div className="chrome-panel space-y-4 rounded-2xl p-4">
+          <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-900 dark:text-amber-200">
+            <div className="font-bold flex items-center gap-1.5 mb-1">
+              <span>📦</span> הוראות שילוח והספקה להנהלת COLT:
+            </div>
+            <p>
+              כאשר לקוח רוכש קלף שלכם ביריד, פרטי הרכישה מופיעים כאן. **למען פרטיות הלקוח**, פרטי המזמין אינם מוצגים. עליכם לשלוח את הקלף למחסן הנהלת COLT בצירוף מספר ההזמנה, וההנהלה תספק אותו ללקוח. לאחר ששלחתם, סמנו בצ׳קבוקס ״נשלח להנהלה״ כדי לעקוב אחר הטיפול.
+            </p>
+          </div>
+
+          {isLoadingOrders ? (
+            <div className="text-sm text-muted-foreground text-center py-6">טוען הזמנות…</div>
+          ) : !vendorOrders.length ? (
+            <div className="rounded-xl border-2 border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+              עדיין אין הזמנות עבור הקלפים והמוצרים שלכם.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {vendorOrders.map((ord) => {
+                const prod = ord.products;
+                const isShipped = !!ord.vendor_shipped;
+                return (
+                  <div
+                    key={ord.id}
+                    className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 p-3.5 transition-all ${
+                      isShipped
+                        ? "border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-950/20"
+                        : "border-amber-500/40 bg-amber-500/5 dark:bg-amber-950/20 shadow-sm"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-border bg-white">
+                        {prod?.image_url ? (
+                          <img src={prod.image_url} alt="" className="h-full w-full object-contain" />
+                        ) : (
+                          <div className="grid h-full w-full place-items-center text-xs text-muted-foreground">🃏</div>
+                        )}
+                      </div>
+                      <div className="min-w-0 text-start">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-foreground truncate">{prod?.name || "קלף מבוקש"}</span>
+                          <span className="rounded-full bg-primary/15 text-primary text-[10px] font-black px-2 py-0.5">
+                            הזמנה #{ord.order_number || ord.id.slice(0, 8)}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {prod?.category ? `${prod.category} · ` : ""}{prod?.set_name ? `${prod.set_name} · ` : ""}
+                          כמות: <span className="font-bold text-foreground">{ord.quantity || 1}</span> · 
+                          תמורה: <span className="font-bold text-primary">💎 {ord.credits_charged} ג'מים</span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          תאריך קנייה: {new Date(ord.created_at).toLocaleDateString("he-IL")} {new Date(ord.created_at).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleVendorShipped(ord.id, isShipped)}
+                        className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-all shadow-sm active:scale-95 ${
+                          isShipped
+                            ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                            : "bg-amber-500 text-white hover:bg-amber-600 animate-pulse"
+                        }`}
+                      >
+                        <span>{isShipped ? "✅ נשלח להנהלת COLT" : "⏳ לסמן כנשלח להנהלה"}</span>
+                      </button>
                     </div>
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${st.cls}`}>{st.label}</span>
-                  {p.vendor_status === "pending" && (
-                    <button onClick={() => void remove(p)} className="text-xs text-destructive underline">מחיקה</button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

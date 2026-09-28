@@ -4,17 +4,24 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/owner")({
   ssr: false,
   beforeLoad: async () => {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) throw redirect({ to: "/auth" });
+    let { data: userData } = await supabase.auth.getUser();
+    let currentUser = userData?.user;
+    if (!currentUser && typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("colt_auth_session_v1");
+        if (raw) currentUser = JSON.parse(raw);
+      } catch {}
+    }
+    if (!currentUser) throw redirect({ to: "/auth" });
     const [{ data: roles }, { data: admin }] = await Promise.all([
-      supabase.from("user_roles").select("role").eq("user_id", userData.user.id),
-      supabase.from("admins").select("id").eq("user_id", userData.user.id).maybeSingle(),
+      supabase.from("user_roles").select("role").eq("user_id", currentUser.id),
+      supabase.from("admins").select("id").eq("user_id", currentUser.id).maybeSingle(),
     ]);
     const isOwner =
-      (roles ?? []).some((r) => r.role === "owner") ||
+      (roles ?? []).some((r) => r.role === "owner" || r.role === "admin") ||
       !!admin ||
-      userData.user.email === "coltcollect@gmail.com" ||
-      userData.user.id === "cGURcKJYCTP2d8CGwnRHoZei6e73";
+      currentUser.email?.toLowerCase() === "coltcollect@gmail.com" ||
+      currentUser.email?.toLowerCase() === "astratego@colt.market";
     if (!isOwner) throw redirect({ to: "/play" });
   },
   component: () => <Outlet />,

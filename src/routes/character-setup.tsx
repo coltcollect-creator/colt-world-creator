@@ -8,8 +8,15 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/character-setup")({
   ssr: false,
   beforeLoad: async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) throw redirect({ to: "/auth" });
+    let { data } = await supabase.auth.getUser();
+    let currentUser = data?.user;
+    if (!currentUser && typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("colt_auth_session_v1");
+        if (raw) currentUser = JSON.parse(raw);
+      } catch {}
+    }
+    if (!currentUser) throw redirect({ to: "/auth" });
   },
   component: CharacterSetup,
 });

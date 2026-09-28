@@ -87,7 +87,8 @@ export function useLivePositions(mapId: string | null | undefined, enabled: bool
     const e = entries.current.get(id);
     if (!e) return undefined;
     const now = performance.now();
-    if (now - e.lastMsg > 10000) {
+    // Keep entries for 3 minutes so standing players do not disappear from view
+    if (now - e.lastMsg > 180000) {
       entries.current.delete(id);
       return undefined;
     }
@@ -96,9 +97,29 @@ export function useLivePositions(mapId: string | null | undefined, enabled: bool
     const a = 1 - Math.exp(-SMOOTH_K * dt);
     e.x += (e.tx - e.x) * a;
     e.y += (e.ty - e.y) * a;
-    const moving = e.moving && now - e.lastMsg < 400;
+    const moving = e.moving && now - e.lastMsg < 1200;
     return { x: e.x, y: e.y, facing: e.facing, moving };
   }, []);
 
-  return { send, sample };
+  /** Ingest remote player position directly (from Firestore realtime snapshot) */
+  const feed = useCallback(
+    (id: string, x: number, y: number, facing: LiveFacing = "right", moving = false) => {
+      if (!id || id === selfId) return;
+      const now = performance.now();
+      const prev = entries.current.get(id);
+      entries.current.set(id, {
+        x: prev?.x ?? x,
+        y: prev?.y ?? y,
+        tx: x,
+        ty: y,
+        facing: facing ?? prev?.facing ?? "right",
+        moving: !!moving,
+        lastMsg: now,
+        lastSample: prev?.lastSample ?? now,
+      });
+    },
+    [selfId]
+  );
+
+  return { send, sample, feed };
 }

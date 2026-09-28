@@ -123,14 +123,19 @@ export const gameDataStore = {
 
   upsertRow(tableName: string, row: Row): Row {
     const table = this.getTable(tableName);
-    const id = row.id != null ? String(row.id) : crypto.randomUUID();
+    // If active_players, use user_id as primary key to prevent duplicate player rows
+    const id = row.id != null
+      ? String(row.id)
+      : (tableName === "active_players" && row.user_id != null ? String(row.user_id) : crypto.randomUUID());
     const dataToSave = {
       ...row,
       id,
       created_at: row.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    const idx = table.findIndex((r) => String(r.id) === id);
+    const idx = table.findIndex(
+      (r) => String(r.id) === id || (tableName === "active_players" && r.user_id && r.user_id === row.user_id)
+    );
     if (idx >= 0) {
       table[idx] = { ...table[idx], ...dataToSave };
     } else {

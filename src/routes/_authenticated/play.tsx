@@ -20,6 +20,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useServerFn } from "@tanstack/react-start";
 import { syncWooStock } from "@/lib/woo.functions";
 import { useTourAction } from "@/lib/tour";
+import { QuestProgressToast } from "@/components/game/QuestProgressToast";
+import { trackQuestAction } from "@/lib/quest-events";
 
 
 
@@ -127,8 +129,8 @@ function PlayPage() {
   useEffect(() => {
     if (!user) return;
     // record login progress
+    trackQuestAction("login", 1);
     supabase.rpc("progress_quest", { _action_type: "login", _amount: 1 }).then(() => {});
-    return () => { supabase.from("active_players").delete().eq("user_id", user.id).then(() => {}); };
   }, [user]);
 
   // NPC contact = start conversation. Store contact = open catalog modal.
@@ -143,22 +145,42 @@ function PlayPage() {
     }
 
     if (kind === "npc") {
+      trackQuestAction("visit_npc", 1, { npcId: id });
       supabase.rpc("progress_quest", { _action_type: "visit_npc", _amount: 1 }).then(() => {});
       await startConversationWith("npc", id, npcs.find((n) => n.id === id)?.name ?? "NPC");
       return;
     }
-    supabase.rpc("progress_quest", { _action_type: "visit_store", _amount: 1 }).then(() => {});
+    if (kind === "store") {
+      setInteraction({ kind, id });
+      return;
+    }
     setInteraction({ kind, id });
   };
 
   const startConversationWith = async (kind: "store" | "npc", id: string, name: string) => {
     if (!user) return;
     try {
+      // Check if conversation already exists
+      const { data: existingList } = await supabase
+        .from("store_conversations")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq(kind === "store" ? "store_id" : "npc_id", id)
+        .limit(1);
+
+      if (existingList && existingList.length > 0 && existingList[0]?.id) {
+        setChatOverlay({ conversationId: existingList[0].id, name });
+        return;
+      }
+
       const payload: Record<string, unknown> = {
         user_id: user.id,
         subject: name,
         status: "open",
+        unread_owner: 0,
+        unread_user: 0,
         created_at: new Date().toISOString(),
+        last_message_at: new Date().toISOString(),
       };
       if (kind === "store") payload.store_id = id; else payload.npc_id = id;
       const { data } = await supabase.from("store_conversations").insert(payload as never).select("id").maybeSingle();
@@ -197,6 +219,7 @@ function PlayPage() {
 
   return (
     <div className="mx-auto max-w-[1600px] p-2 md:p-4">
+      <QuestProgressToast />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_260px]">
         <div>
           <div data-tour="game-viewport" className="relative">
@@ -211,7 +234,7 @@ function PlayPage() {
                   objects={mapBundle.objects}
                   stores={stores}
                   npcs={npcs}
-                  isPublicRoom={!!(mapBundle.map as { is_public_room?: boolean }).is_public_room}
+                  isPublicRoom={(mapBundle.map as { is_public_room?: boolean }).is_public_room !== false}
                   backgroundColor={bgColor}
                   floorType={(mapBundle.map as unknown as { floor_type?: string | null }).floor_type ?? "grass"}
                   floorColor={(mapBundle.map as unknown as { floor_color?: string | null }).floor_color ?? null}
@@ -230,7 +253,7 @@ function PlayPage() {
                 objects={mapBundle.objects}
                 stores={stores}
                 npcs={npcs}
-                isPublicRoom={!!(mapBundle.map as { is_public_room?: boolean }).is_public_room}
+                isPublicRoom={(mapBundle.map as { is_public_room?: boolean }).is_public_room !== false}
                 backgroundColor={bgColor}
                 touchInputRef={touchInputRef}
                 onInteract={openInteraction}
@@ -284,11 +307,6 @@ function PlayPage() {
 
             {/* Mobile joystick */}
             <MobileJoystick touchInputRef={touchInputRef} />
-
-            {/* Inline chat overlay */}
-            {chatOverlay && (
-              <ChatOverlay conversationId={chatOverlay.conversationId} name={chatOverlay.name} onClose={() => setChatOverlay(null)} />
-            )}
           </div>
 
 
@@ -341,6 +359,13 @@ function StoreModal({ storeId, onClose, onChat }: { storeId: string; onClose: ()
   const qc = useQueryClient();
   const [buyingId, setBuyingId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ id: string; kind: "product" | "cosmetic"; name: string; price: number; isFree?: boolean; image?: string | null } | null>(null);
+
+  useEffect(() => {
+    if (storeId) {
+      trackQuestAction("visit_stores", 1, { storeId });
+      supabase.rpc("progress_quest", { _action_type: "visit_store", _amount: 1 }).then(() => {});
+    }
+  }, [storeId]);
   const { data: store } = useQuery({
     queryKey: ["store", storeId],
     queryFn: async () => (await supabase.from("stores").select("*").eq("id", storeId).maybeSingle()).data,
@@ -514,11 +539,12 @@ function ChatOverlay({ conversationId, name, onClose }: { conversationId: string
   const { user } = useAuth();
   const qc = useQueryClient();
   const [text, setText] = useState("");
-  const { data: messages = [] } = useQuery({
+  const { data: rawMessages = [] } = useQuery({
     queryKey: ["conv-messages", conversationId],
     queryFn: async () => (await supabase.from("conversation_messages").select("*").eq("conversation_id", conversationId).order("created_at")).data ?? [],
     refetchInterval: 3000,
   });
+  const messages = Array.from(new Map(rawMessages.map((m: any) => [m.id, m])).values());
 
   useEffect(() => {
     const ch = supabase
@@ -534,7 +560,30 @@ function ChatOverlay({ conversationId, name, onClose }: { conversationId: string
     if (!text.trim() || !user) return;
     const body = text.trim();
     setText("");
-    await supabase.from("conversation_messages").insert({ conversation_id: conversationId, sender_id: user.id, sender_role: "user", body });
+    const now = new Date().toISOString();
+    const msgId = crypto.randomUUID();
+
+    await supabase.from("conversation_messages").insert({
+      id: msgId,
+      conversation_id: conversationId,
+      sender_id: user.id,
+      sender_role: "user",
+      body,
+      created_at: now,
+    });
+
+    const { data: conv } = await supabase.from("store_conversations").select("unread_owner").eq("id", conversationId).maybeSingle();
+    const currentUnread = Number(conv?.unread_owner) || 0;
+    await supabase.from("store_conversations").update({
+      last_message_at: now,
+      unread_owner: currentUnread + 1,
+      status: "open",
+    }).eq("id", conversationId);
+
+    qc.invalidateQueries({ queryKey: ["conv-messages", conversationId] });
+    qc.invalidateQueries({ queryKey: ["owner-convs"] });
+    qc.invalidateQueries({ queryKey: ["owner-tab-alerts"] });
+    qc.invalidateQueries({ queryKey: ["owner-stats"] });
   };
 
   return (
@@ -545,10 +594,10 @@ function ChatOverlay({ conversationId, name, onClose }: { conversationId: string
       </div>
       <div className="max-h-64 space-y-2 overflow-y-auto p-3 text-sm">
         {messages.length === 0 && <div className="text-center text-xs text-muted-foreground">{t("msg.write")}</div>}
-        {messages.map((m) => {
+        {messages.map((m, idx) => {
           const mine = (m as { sender_id: string }).sender_id === user?.id;
           return (
-            <div key={(m as { id: string }).id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+            <div key={(m as { id: string }).id || `cm-${idx}`} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-sm ${mine ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
                 {(m as { body: string }).body}
               </div>

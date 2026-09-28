@@ -1,8 +1,33 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, cleanForFirestore } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { PLAYER_W, PLAYER_H, cosmeticRect, sortLayers } from "@/lib/avatar-layout";
 import { useLivePositions } from "@/hooks/use-live-positions";
+import { trackQuestAction } from "@/lib/quest-events";
+import { db } from "@/lib/firebase";
+import { collection, doc, setDoc, deleteDoc, query, where, onSnapshot } from "firebase/firestore";
+
+// Pre-cached starter characters
+const STARTER_CHARACTER_SPRITES: Record<string, { right: string; left: string | null; jump: string | null; idle: string }> = {
+  "d14fed03-b2c5-4205-b2ff-a151345151ee": {
+    right: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790241340487-ckaoy2.png",
+    left: null,
+    jump: null,
+    idle: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790241168098-3udpgm.png",
+  },
+  "d7fc1b37-dae3-4bd0-bab1-3c21a4a51571": {
+    right: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790247232415-8xr2rk.png",
+    left: null,
+    jump: null,
+    idle: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790245088277-toz4do.png",
+  },
+  "44ca85cf-9e82-47e5-9ce5-06abde1ec0d1": {
+    right: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790244597162-oi7k6a.png",
+    left: null,
+    jump: null,
+    idle: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790243842980-2zbn8o.png",
+  },
+};
 
 export type MapObject = {
   id: string;
@@ -89,6 +114,16 @@ function getImg(url?: string | null) {
   return img;
 }
 
+// Immediately warm up starter sprite images in cache
+if (typeof window !== "undefined") {
+  Object.values(STARTER_CHARACTER_SPRITES).forEach((s) => {
+    if (s.right) getImg(s.right);
+    if (s.idle) getImg(s.idle);
+    if (s.left) getImg(s.left);
+    if (s.jump) getImg(s.jump);
+  });
+}
+
 export function GameViewport({
   width,
   height,
@@ -111,9 +146,21 @@ export function GameViewport({
   liveRef.current = live;
   const [message, setMessage] = useState<string | null>(null);
   const [others, setOthers] = useState<OtherPlayer[]>([]);
+  const othersRef = useRef<OtherPlayer[]>([]);
+  othersRef.current = others;
   const [equipped, setEquipped] = useState<EquippedCosmetic[]>([]);
-  const [characterSprites, setCharacterSprites] = useState<{ right: string | null; left: string | null; jump: string | null; idle: string | null } | null>(null);
+
+  const initialCid = (profile as unknown as { character_id?: string | null } | null)?.character_id || "d14fed03-b2c5-4205-b2ff-a151345151ee";
+  const initialStarter = STARTER_CHARACTER_SPRITES[initialCid] || STARTER_CHARACTER_SPRITES["d14fed03-b2c5-4205-b2ff-a151345151ee"];
+  const [characterSprites, setCharacterSprites] = useState<{ right: string | null; left: string | null; jump: string | null; idle: string | null }>(() => ({
+    right: initialStarter?.right ?? null,
+    left: initialStarter?.left ?? null,
+    jump: initialStarter?.jump ?? null,
+    idle: initialStarter?.idle ?? null,
+  }));
   const [otherLooks, setOtherLooks] = useState<Record<string, Look>>({});
+  const otherLooksRef = useRef<Record<string, Look>>({});
+  otherLooksRef.current = otherLooks;
 
 
   const nearbyRef = useRef<string | null>(null);
@@ -318,11 +365,30 @@ export function GameViewport({
       const t = performance.now();
       // High-frequency realtime broadcast (~16/sec) so others see smooth motion
       liveRef.current.send(s.x, s.y, s.facing === -1 ? "left" : "right", s.vx !== 0 || !s.onGround);
-      // Low-frequency DB persistence (roster + resume position)
-      if (t - s.lastSave > 5000 && user && mapId) {
-        s.lastSave = t;
-        supabase.from("active_players").upsert({ user_id: user.id, map_id: mapId, x: s.x, y: s.y, last_seen: new Date().toISOString() }).then(() => {});
-        supabase.from("profiles").update({ last_x: s.x, last_y: s.y, current_map_id: mapId }).eq("id", user.id).then(() => {});
+      
+      // Realtime multiplayer sync to Firestore: immediate on start, throttled to 250ms when moving, 2500ms when stationary
+      if (user && mapId) {
+        const isMoving = s.vx !== 0 || !s.onGround;
+        const interval = isMoving ? 250 : 2500;
+        if (s.lastSave === 0 || t - s.lastSave > interval) {
+          s.lastSave = t;
+          const currentUsername = profile?.display_name || profile?.username || user?.user_metadata?.username || "Player";
+          const posData = {
+            id: user.id,
+            user_id: user.id,
+            username: currentUsername,
+            avatar_config: profile?.avatar_config || null,
+            character_id: profile?.character_id || null,
+            map_id: mapId,
+            x: Math.round(s.x),
+            y: Math.round(s.y),
+            facing: s.facing === -1 ? "left" : "right",
+            moving: isMoving,
+            last_seen: new Date().toISOString(),
+          };
+          setDoc(doc(db, "active_players", user.id), cleanForFirestore(posData), { merge: true }).catch(() => {});
+          supabase.from("profiles").update({ last_x: s.x, last_y: s.y, current_map_id: mapId }).eq("id", user.id).then(() => {});
+        }
       }
 
       // Draw
@@ -493,23 +559,21 @@ export function GameViewport({
         ctx.textAlign = "center"; ctx.fillText(nref?.name ?? "NPC", np.x + n.width / 2, np.y - 6);
       }
       // Other players (multiplayer) — same sprites + cosmetics as the local player
-      if (isPublicRoom) {
-        for (const op of others) {
-          if (op.user_id === user?.id) continue;
-          const look = otherLooks[op.user_id];
-          const lp = liveRef.current.sample(op.user_id);
-          const ox = lp?.x ?? op.x;
-          const oy = lp?.y ?? op.y;
-          const oFacing = lp?.facing ?? "right";
-          const sprite = oFacing === "left"
-            ? (look?.left ?? look?.idle ?? look?.right ?? null)
-            : (look?.right ?? look?.idle ?? null);
-          drawAvatar(ctx, ox, oy, sprite, look?.cosmetics ?? [], oFacing, "#60a5fa", oFacing === "left" && !look?.left);
-          ctx.fillStyle = "#1e3a8a"; ctx.font = "bold 11px Fredoka, system-ui"; ctx.textAlign = "center";
-          ctx.fillText(op.username ?? "player", ox + PLAYER_W / 2, oy - 6);
-          const b = bubblesRef.current.get(op.user_id);
-          if (b && b.until > performance.now()) drawBubble(ctx, ox + PLAYER_W / 2, oy - 20, b.text);
-        }
+      for (const op of othersRef.current) {
+        if (op.user_id === user?.id) continue;
+        const look = otherLooksRef.current[op.user_id];
+        const lp = liveRef.current.sample(op.user_id);
+        const ox = lp?.x ?? op.x;
+        const oy = lp?.y ?? op.y;
+        const oFacing = lp?.facing ?? "right";
+        const sprite = oFacing === "left"
+          ? (look?.left ?? look?.idle ?? look?.right ?? null)
+          : (look?.right ?? look?.idle ?? null);
+        drawAvatar(ctx, ox, oy, sprite, look?.cosmetics ?? [], oFacing, "#60a5fa", oFacing === "left" && !look?.left, lp?.moving ?? false);
+        ctx.fillStyle = "#1e3a8a"; ctx.font = "bold 11px Fredoka, system-ui"; ctx.textAlign = "center";
+        ctx.fillText(op.username ?? "player", ox + PLAYER_W / 2, oy - 6);
+        const b = bubblesRef.current.get(op.user_id);
+        if (b && b.until > performance.now()) drawBubble(ctx, ox + PLAYER_W / 2, oy - 20, b.text);
       }
       // Player
       const jumping = !s.onGround;
@@ -541,12 +605,22 @@ export function GameViewport({
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [width, height, viewportWidth, viewportHeight, objects, stores, npcs, user, mapId, onInteract, onNearby, profile?.username, isPublicRoom, others, equipped, characterSprites, otherLooks, backgroundColor, touchInputRef]);
+  }, [width, height, viewportWidth, viewportHeight, objects, stores, npcs, user, mapId, onInteract, onNearby, profile?.username, equipped, characterSprites, backgroundColor, touchInputRef]);
 
   // Load selected base character sprites from profile.character_id
   useEffect(() => {
-    const cid = (profile as unknown as { character_id?: string | null } | null)?.character_id;
-    if (!cid) { setCharacterSprites(null); return; }
+    const cid = (profile as unknown as { character_id?: string | null } | null)?.character_id || "d14fed03-b2c5-4205-b2ff-a151345151ee";
+    const cached = STARTER_CHARACTER_SPRITES[cid];
+    if (cached) {
+      setCharacterSprites({
+        right: cached.right,
+        left: cached.left,
+        jump: cached.jump,
+        idle: cached.idle,
+      });
+      getImg(cached.right);
+      getImg(cached.idle);
+    }
     let cancelled = false;
     (async () => {
       const { data } = await supabase
@@ -555,11 +629,17 @@ export function GameViewport({
         .eq("id", cid).maybeSingle();
       if (cancelled || !data) return;
       const d = data as { sprite_right_url: string | null; sprite_left_url: string | null; sprite_jump_url: string | null; image_url: string | null };
+      const right = d.sprite_right_url ?? d.image_url;
+      const idle = d.image_url ?? d.sprite_right_url;
+      if (right) getImg(right);
+      if (idle) getImg(idle);
+      if (d.sprite_left_url) getImg(d.sprite_left_url);
+      if (d.sprite_jump_url) getImg(d.sprite_jump_url);
       setCharacterSprites({
-        right: d.sprite_right_url ?? d.image_url,
+        right,
         left: d.sprite_left_url,
         jump: d.sprite_jump_url,
-        idle: d.image_url ?? d.sprite_right_url,
+        idle,
       });
     })();
     return () => { cancelled = true; };
@@ -590,51 +670,83 @@ export function GameViewport({
     return () => { cancelled = true; };
   }, [profile?.avatar_config]);
 
-  // Multiplayer presence: poll + subscribe to active_players for this map
+  // Multiplayer presence: real-time Firestore onSnapshot for this map
   useEffect(() => {
-    if (!isPublicRoom || !mapId) { setOthers([]); return; }
+    if (!mapId) {
+      othersRef.current = [];
+      setOthers([]);
+      return;
+    }
     let cancelled = false;
-    const load = async () => {
-      const cutoff = new Date(Date.now() - 60 * 1000).toISOString();
-      const { data } = await supabase
-        .from("active_players")
-        .select("user_id, x, y, last_seen")
-        .eq("map_id", mapId)
-        .gt("last_seen", cutoff);
-      if (cancelled || !data) return;
-      const ids = Array.from(new Set(data.map((r) => r.user_id as string)));
-      const infos = new Map<string, { username?: string; avatar_config?: Record<string, string> | null; character_id?: string | null }>();
-      if (ids.length) {
-        const { data: ps } = await supabase.rpc("get_public_profiles", { _ids: ids });
-        for (const p of (ps ?? []) as Array<{ id: string; username: string; avatar_config: unknown; character_id: string | null }>) {
-          infos.set(p.id, {
-            username: p.username,
-            avatar_config: (p.avatar_config ?? {}) as Record<string, string>,
-            character_id: p.character_id,
+
+    let unsubSnapshot: (() => void) | null = null;
+    try {
+      const q = query(collection(db, "active_players"), where("map_id", "==", mapId));
+      unsubSnapshot = onSnapshot(q, (snapshot) => {
+        if (cancelled) return;
+        const now = Date.now();
+        // 3-minute cutoff to tolerate clock skew and stationary players
+        const cutoff = now - 180 * 1000;
+        const remotePlayers: OtherPlayer[] = [];
+
+        snapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          const uid = (d.user_id || docSnap.id) as string;
+          if (!uid || uid === user?.id) return;
+          const seenTime = new Date(d.last_seen || 0).getTime();
+          if (d.last_seen && seenTime < cutoff) return;
+
+          const px = typeof d.x === "number" ? d.x : 100;
+          const py = typeof d.y === "number" ? d.y : 100;
+          const facing = d.facing === "left" ? "left" : "right";
+          const moving = Boolean(d.moving);
+
+          // Feed position directly into smooth interpolator
+          liveRef.current.feed(uid, px, py, facing, moving);
+
+          remotePlayers.push({
+            user_id: uid,
+            x: px,
+            y: py,
+            last_seen: d.last_seen || new Date().toISOString(),
+            username: (d.username as string) || "Player",
+            avatar_config: (d.avatar_config as Record<string, string>) || null,
+            character_id: (d.character_id as string) || null,
           });
-        }
+        });
+
+        othersRef.current = remotePlayers;
+        setOthers(remotePlayers);
+      }, (err) => {
+        console.warn("Firestore presence onSnapshot error:", err);
+      });
+    } catch (e) {
+      console.warn("Error setting up active_players onSnapshot:", e);
+    }
+
+    const cleanupSelf = () => {
+      if (user?.id) {
+        deleteDoc(doc(db, "active_players", user.id)).catch(() => {});
       }
-      setOthers(data.map((r) => ({
-        user_id: r.user_id as string, x: r.x as number, y: r.y as number,
-        last_seen: r.last_seen as string,
-        username: infos.get(r.user_id as string)?.username,
-        avatar_config: infos.get(r.user_id as string)?.avatar_config ?? null,
-        character_id: infos.get(r.user_id as string)?.character_id ?? null,
-      })));
     };
-    load();
-    const interval = setInterval(load, 3000);
-    const channel = supabase
-      .channel(`presence-${mapId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "active_players", filter: `map_id=eq.${mapId}` }, () => load())
-      .subscribe();
-    return () => { cancelled = true; clearInterval(interval); supabase.removeChannel(channel); };
-  }, [isPublicRoom, mapId]);
+    window.addEventListener("beforeunload", cleanupSelf);
+
+    return () => {
+      cancelled = true;
+      if (unsubSnapshot) unsubSnapshot();
+      window.removeEventListener("beforeunload", cleanupSelf);
+      cleanupSelf();
+    };
+  }, [mapId, user?.id]);
 
   // Resolve other players' base character sprites + equipped cosmetics
   const othersLookKey = others.map((o) => `${o.user_id}:${o.character_id ?? ""}:${Object.values(o.avatar_config ?? {}).join(",")}`).join("|");
   useEffect(() => {
-    if (!others.length) { setOtherLooks({}); return; }
+    if (!others.length) {
+      otherLooksRef.current = {};
+      setOtherLooks({});
+      return;
+    }
     let cancelled = false;
     (async () => {
       const charIds = Array.from(new Set(others.map((o) => o.character_id).filter(Boolean))) as string[];
@@ -668,6 +780,7 @@ export function GameViewport({
             })),
         };
       }
+      otherLooksRef.current = next;
       setOtherLooks(next);
     })();
     return () => { cancelled = true; };
@@ -698,6 +811,14 @@ export function GameViewport({
 
   // Global chat → floating bubbles above players
   useEffect(() => {
+    const handleCustomBubble = (e: any) => {
+      const d = e.detail;
+      if (d?.userId && d?.message) {
+        bubblesRef.current.set(d.userId, { text: d.message.slice(0, 120), until: performance.now() + 5000 });
+      }
+    };
+    window.addEventListener("colt-chat-bubble", handleCustomBubble);
+
     const channel = supabase
       .channel(`chat-bubbles-${mapId ?? "any"}`)
       .on(
@@ -710,7 +831,10 @@ export function GameViewport({
         },
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      window.removeEventListener("colt-chat-bubble", handleCustomBubble);
+      supabase.removeChannel(channel);
+    };
   }, [mapId]);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
