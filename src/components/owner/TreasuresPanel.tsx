@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ImageUpload } from "@/components/owner/ImageUpload";
+import { saveAlbumCard, type CardRarity } from "@/lib/album-cards";
 
 export type BoxReward = {
   type: "credits" | "xp" | "product" | "cosmetic" | "wheel_spin" | "clue";
@@ -12,6 +13,12 @@ export type BoxReward = {
   wheel_id?: string;
   clue_id?: string;
   label?: string;
+  has_card?: boolean;
+  card_title?: string;
+  card_image_url?: string;
+  card_description?: string;
+  card_rarity?: CardRarity;
+  card_number?: number;
 };
 
 type BoxRow = {
@@ -159,7 +166,23 @@ function BoxEditor({ row, onClose, onSaved }: { row: BoxRow | null; onClose: () 
       : await supabase.from("treasure_boxes").insert(payload);
     setSaving(false);
     if (res.error) { toast.error(res.error.message); return; }
-    toast.success("נשמר"); onSaved();
+
+    if (reward.has_card && reward.card_title && reward.card_image_url) {
+      await saveAlbumCard({
+        id: `card-tb-${row?.id || "new"}`,
+        card_number: Number(reward.card_number) || 1,
+        title: reward.card_title,
+        description: reward.card_description || `הושג מפתיחת ${form.name}`,
+        image_url: reward.card_image_url,
+        rarity: reward.card_rarity || "rare",
+        source_type: "treasure",
+        source_id: row?.id || "",
+        source_name: form.name,
+        active: form.active,
+      }).catch(console.warn);
+    }
+
+    toast.success("נשמר בהצלחה כולל הגדרות אלבום הקלפים!"); onSaved();
   };
 
   return (
@@ -226,6 +249,80 @@ function BoxEditor({ row, onClose, onSaved }: { row: BoxRow | null; onClose: () 
                 </select>
               )}
             </div>
+          </div>
+
+          {/* Digital Album Card */}
+          <div className="chrome-panel md:col-span-2 space-y-3 p-3 bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-amber-500/10 border-2 border-purple-200 dark:border-purple-800">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold flex items-center gap-1.5">
+                <span>🃏 קלף לאלבום הכנס הדיגיטלי (Digital Event Album)</span>
+              </div>
+              <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!reward.has_card}
+                  onChange={(e) => setReward({ has_card: e.target.checked })}
+                  className="rounded"
+                />
+                <span>האם פתיחת התיבה מעניקה קלף לאלבום?</span>
+              </label>
+            </div>
+
+            {reward.has_card && (
+              <div className="grid gap-2 pt-2 border-t border-border sm:grid-cols-2">
+                <label className="text-xs">
+                  <span className="font-semibold">שם הקלף</span>
+                  <input
+                    value={reward.card_title ?? ""}
+                    onChange={(e) => setReward({ card_title: e.target.value })}
+                    placeholder="לדוגמה: אוצר המקדש המוזהב"
+                    className={input}
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs">
+                    <span className="font-semibold">מספר קלף באלבום</span>
+                    <input
+                      type="number"
+                      value={reward.card_number ?? 1}
+                      onChange={(e) => setReward({ card_number: Number(e.target.value) })}
+                      className={input}
+                    />
+                  </label>
+                  <label className="text-xs">
+                    <span className="font-semibold">נדירות</span>
+                    <select
+                      value={reward.card_rarity ?? "rare"}
+                      onChange={(e) => setReward({ card_rarity: e.target.value as CardRarity })}
+                      className={input}
+                    >
+                      <option value="common">נפוץ (Common)</option>
+                      <option value="rare">נדיר (Rare)</option>
+                      <option value="epic">אפי (Epic)</option>
+                      <option value="legendary">אגדי (Legendary)</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="text-xs sm:col-span-2">
+                  <span className="font-semibold">תיאור הקלף והסיפור שמאחוריו</span>
+                  <textarea
+                    value={reward.card_description ?? ""}
+                    onChange={(e) => setReward({ card_description: e.target.value })}
+                    rows={2}
+                    placeholder="תיאור שיופיע באלבום כאשר לוחצים על הקלף..."
+                    className={input}
+                  />
+                </label>
+                <div className="sm:col-span-2">
+                  <div className="mb-1 text-xs font-semibold">תמונת הקלף (שומר שקיפות ללא רקע שחור)</div>
+                  <ImageUpload
+                    value={reward.card_image_url}
+                    folder="cards"
+                    onChange={(url) => setReward({ card_image_url: url ?? undefined })}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="chrome-panel md:col-span-2 space-y-2 p-3">

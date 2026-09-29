@@ -23,6 +23,7 @@ import { WooSyncSettings } from "@/components/owner/WooSyncSettings";
 import { VendorProductsPanel } from "@/components/owner/VendorProductsPanel";
 import { LevelsBuilderPanel } from "@/components/owner/LevelsBuilderPanel";
 import { AuditLogsPanel } from "@/components/owner/AuditLogsPanel";
+import { AlbumManagerPanel } from "@/components/owner/AlbumManagerPanel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -33,7 +34,7 @@ export const Route = createFileRoute("/owner/")({ component: OwnerConsole });
 type Tab =
   | "dashboard" | "messages" | "broadcast" | "maps" | "stores" | "products" | "vendorproducts" | "categories" | "cosmetics" | "characters" | "roles" | "npcs"
   | "wheels" | "mystery" | "auctions" | "liverips" | "treasures" | "clues"
-  | "quests" | "titles" | "levels" | "players" | "users" | "orders" | "transactions" | "packages"
+  | "quests" | "album" | "titles" | "levels" | "players" | "users" | "orders" | "transactions" | "packages"
   | "moderation" | "audit" | "settings";
 
 const TABS: { key: Tab; i18n: string; icon: string; fallback?: string }[] = [
@@ -56,6 +57,7 @@ const TABS: { key: Tab; i18n: string; icon: string; fallback?: string }[] = [
   { key: "treasures", i18n: "owner.tab.treasures", icon: "🧰", fallback: "תיבות אוצר" },
   { key: "clues", i18n: "owner.tab.clues", icon: "🧩", fallback: "רמזים" },
   { key: "quests", i18n: "owner.tab.quests", icon: "📜" },
+  { key: "album", i18n: "owner.tab.album", icon: "🃏", fallback: "אלבום מדבקות דיגיטלי" },
   { key: "titles", i18n: "owner.tab.titles", icon: "🏆" },
   { key: "levels", i18n: "owner.tab.levels", icon: "⭐", fallback: "בניית רמות ותגמולים" },
   { key: "players", i18n: "owner.tab.players", icon: "👥" },
@@ -187,14 +189,17 @@ const SCHEMAS: Record<string, Schema> = {
     table: "quests",
     cols: ["name", "quest_type", "action_type", "target_amount", "credit_reward", "active"],
     fields: [
-      { key: "name", label: "Name", type: "text" },
-      { key: "description", label: "Description", type: "textarea" },
-      { key: "quest_type", label: "Type", type: "select", options: ["daily", "weekly", "monthly", "one_time"], default: "daily" },
-      { key: "action_type", label: "Action", type: "select", options: ["login", "chat", "purchase", "explore", "visit_store", "custom"], default: "login" },
-      { key: "target_amount", label: "Target", type: "number", default: 1 },
-      { key: "credit_reward", label: "Credit reward", type: "number", default: 10 },
-      { key: "xp_reward", label: "XP reward", type: "number", default: 5 },
-      { key: "active", label: "Active", type: "boolean", default: true },
+      { key: "name", label: "שם המשימה", type: "text" },
+      { key: "description", label: "תיאור המשימה", type: "textarea" },
+      { key: "quest_type", label: "סוג תקופה", type: "select", options: ["daily", "weekly", "monthly", "one_time"], default: "daily" },
+      { key: "action_type", label: "פעולה נדרשת", type: "select", options: ["login", "chat", "purchase", "explore", "visit_store", "custom"], default: "login" },
+      { key: "target_amount", label: "יעד כמותי", type: "number", default: 1 },
+      { key: "credit_reward", label: "פרס ג'מים", type: "number", default: 10 },
+      { key: "xp_reward", label: "פרס XP", type: "number", default: 5 },
+      { key: "icon_url", label: "תמונת קלף לאלבום הכנס (אופציונלי)", type: "image", folder: "cards" },
+      { key: "cosmetic_reward", label: "שם הקלף שמוענק לאלבום", type: "text" },
+      { key: "title_reward", label: "מספר הקלף באלבום (למשל: 3)", type: "text" },
+      { key: "active", label: "פעיל", type: "boolean", default: true },
     ],
   },
   titles: {
@@ -444,6 +449,7 @@ function OwnerConsole() {
       {tab === "treasures" && <TreasuresPanel />}
       {tab === "clues" && <CluesPanel />}
       {tab === "quests" && <ManagedTable schema={SCHEMAS.quests} title={t("owner.tab.quests")} />}
+      {tab === "album" && <AlbumManagerPanel />}
       {tab === "titles" && <ManagedTable schema={SCHEMAS.titles} title={t("owner.tab.titles")} />}
       {tab === "levels" && <LevelsBuilderPanel />}
       {tab === "players" && <PlayersPanel />}

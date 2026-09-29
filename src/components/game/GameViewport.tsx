@@ -80,6 +80,7 @@ type Props = {
   touchInputRef?: MutableRefObject<{ x: number; jump: boolean }>;
   onInteract?: (kind: "store" | "npc" | "door" | "treasure", id: string, extra?: { targetMapId?: string }) => void;
   onNearby?: (n: Nearby) => void;
+  onInspectPlayer?: (player: OtherPlayer) => void;
 };
 
 
@@ -97,8 +98,8 @@ type EquippedCosmetic = {
 
 type Look = { idle: string | null; right: string | null; left: string | null; cosmetics: EquippedCosmetic[] };
 
-const GRAVITY = 0.6;
-const JUMP = 12;
+const GRAVITY = 0.55;
+const JUMP = 13.5;
 const SPEED = 4;
 
 // Simple sprite cache
@@ -138,6 +139,7 @@ export function GameViewport({
   touchInputRef,
   onInteract,
   onNearby,
+  onInspectPlayer,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { user, profile } = useAuth();
@@ -165,9 +167,11 @@ export function GameViewport({
 
   const nearbyRef = useRef<string | null>(null);
   const bubblesRef = useRef<Map<string, { text: string; until: number }>>(new Map());
+  const mapLoadedRef = useRef<string | null>(null);
   const stateRef = useRef({
     x: 100, y: 100, vx: 0, vy: 0, onGround: false, facing: 1 as 1 | -1,
     keys: {} as Record<string, boolean>,
+    jumpConsumed: false,
     camX: 0, camY: 0,
     npcPositions: new Map<string, { x: number; y: number; dir: number; base: number }>(),
     lastSave: 0,
@@ -177,27 +181,33 @@ export function GameViewport({
     const s = stateRef.current;
     s.npcPositions.clear();
 
-    const spawn = objects.find((o) => o.object_type === "spawn");
-    s.x = spawn?.x ?? 100;
-    s.y = spawn?.y ?? 100;
-    s.vx = 0;
-    s.vy = 0;
-    s.camX = 0;
-    s.camY = 0;
-    nearbyRef.current = null;
-    onNearby?.(null);
-
     for (const o of objects) {
       if (o.object_type === "npc") s.npcPositions.set(o.id, { x: o.x, y: o.y, dir: 1, base: o.x });
     }
 
-    const savedMapId = profile?.current_map_id;
-    const hasSavedPositionForThisMap = !!mapId && savedMapId === mapId;
-    if (profile && hasSavedPositionForThisMap) {
-      s.x = profile.last_x || s.x;
-      s.y = profile.last_y || s.y;
+    // Only reset character coordinates on first load or when switching to a different map
+    if (mapLoadedRef.current !== mapId) {
+      mapLoadedRef.current = mapId;
+      const spawn = objects.find((o) => o.object_type === "spawn");
+      s.x = spawn?.x ?? 100;
+      s.y = spawn?.y ?? 100;
+      s.vx = 0;
+      s.vy = 0;
+      s.camX = 0;
+      s.camY = 0;
+      s.onGround = false;
+      s.jumpConsumed = false;
+      nearbyRef.current = null;
+      onNearby?.(null);
+
+      const savedMapId = profile?.current_map_id;
+      const hasSavedPositionForThisMap = !!mapId && savedMapId === mapId;
+      if (profile && hasSavedPositionForThisMap) {
+        s.x = profile.last_x || s.x;
+        s.y = profile.last_y || s.y;
+      }
     }
-  }, [objects, profile, mapId, onNearby]);
+  }, [objects, mapId, onNearby]);
 
   useEffect(() => {
     const kd = (e: KeyboardEvent) => { stateRef.current.keys[e.key.toLowerCase()] = true; };
@@ -286,10 +296,19 @@ export function GameViewport({
       const tin = touchInputRef?.current;
       const left = s.keys["arrowleft"] || s.keys["a"] || (tin && tin.x < -0.2);
       const right = s.keys["arrowright"] || s.keys["d"] || (tin && tin.x > 0.2);
-      const jump = s.keys["arrowup"] || s.keys["w"] || s.keys[" "] || (tin && tin.jump);
+      const jumpKey = !!(s.keys["arrowup"] || s.keys["w"] || s.keys[" "] || (tin && tin.jump));
       s.vx = left ? -SPEED : right ? SPEED : 0;
       if (s.vx < 0) s.facing = -1; else if (s.vx > 0) s.facing = 1;
-      if (jump && s.onGround) { s.vy = -JUMP; s.onGround = false; }
+
+      // Single crisp jump impulse per press/tap
+      if (jumpKey && !s.jumpConsumed && s.onGround) {
+        s.vy = -JUMP;
+        s.onGround = false;
+        s.jumpConsumed = true;
+      } else if (!jumpKey) {
+        s.jumpConsumed = false;
+      }
+
       s.vy += GRAVITY;
       s.x += s.vx;
       s.y += s.vy;
@@ -297,15 +316,28 @@ export function GameViewport({
       if (s.x > width - PLAYER_W) s.x = width - PLAYER_W;
 
       s.onGround = false;
-      for (const p of platforms) {
-        if (s.x + PLAYER_W > p.x && s.x < p.x + p.width) {
-          const feet = s.y + PLAYER_H;
-          if (feet > p.y && feet - s.vy <= p.y + 1 && s.vy >= 0) {
-            s.y = p.y - PLAYER_H; s.vy = 0; s.onGround = true;
+      // Precision collision: only check landing when character is falling downwards (vy >= 0)
+      if (s.vy >= 0) {
+        for (const p of platforms) {
+          if (s.x + PLAYER_W * 0.75 > p.x && s.x + PLAYER_W * 0.25 < p.x + p.width) {
+            const feet = s.y + PLAYER_H;
+            const prevFeet = feet - s.vy;
+            if (prevFeet <= p.y + 4 && feet >= p.y) {
+              s.y = p.y - PLAYER_H;
+              s.vy = 0;
+              s.onGround = true;
+              break;
+            }
           }
         }
       }
-      if (s.y > height) { s.y = 100; s.vy = 0; }
+
+      // Safeguard floor boundary so character never clips into the void
+      if (s.y > height - PLAYER_H) {
+        s.y = height - PLAYER_H;
+        s.vy = 0;
+        s.onGround = true;
+      }
 
 
       for (const npc of npcsOnMap) {
@@ -838,7 +870,6 @@ export function GameViewport({
   }, [mapId]);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!onInteract) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -847,13 +878,27 @@ export function GameViewport({
     const s = stateRef.current;
     const wx = sx + s.camX;
     const wy = sy + s.camY;
+
+    // 1. Check if clicked on another player in the world to inspect their profile and album
+    if (onInspectPlayer) {
+      for (const op of othersRef.current) {
+        const lp = liveRef.current.sample(op.user_id);
+        const px = lp?.x ?? op.x;
+        const py = lp?.y ?? op.y;
+        if (wx >= px - 20 && wx <= px + PLAYER_W + 20 && wy >= py - 25 && wy <= py + PLAYER_H + 20) {
+          onInspectPlayer(op);
+          return;
+        }
+      }
+    }
+
+    if (!onInteract) return;
     for (const o of objects) {
       const hit = wx >= o.x && wx <= o.x + o.width && wy >= o.y && wy <= o.y + o.height;
       if (!hit || !o.reference_id) continue;
       if (o.object_type === "store") { onInteract("store", o.reference_id); return; }
       if (o.object_type === "treasure") { onInteract("treasure", o.reference_id); return; }
     }
-
   };
 
   return (

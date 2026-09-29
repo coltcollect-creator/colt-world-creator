@@ -200,9 +200,54 @@
         "active": { "type": "boolean" }
       },
       "required": ["name", "starting_price"]
+    },
+    "AlbumCard": {
+      "title": "AlbumCard",
+      "description": "Event album card or sticker defined for quests, treasure boxes, or convention events",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "card_number": { "type": "number" },
+        "title": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string" },
+        "image_url": { "type": "string" },
+        "rarity": { "type": "string" },
+        "source_type": { "type": "string" },
+        "source_id": { "type": "string" },
+        "active": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "card_number"]
+    },
+    "UserCard": {
+      "title": "UserCard",
+      "description": "Collected album card owned by a player",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string", "maxLength": 128 },
+        "card_id": { "type": "string" },
+        "card_number": { "type": "number" },
+        "card_title": { "type": "string", "maxLength": 100 },
+        "card_image_url": { "type": "string" },
+        "card_description": { "type": "string" },
+        "card_rarity": { "type": "string" },
+        "source_type": { "type": "string" },
+        "source_name": { "type": "string" },
+        "unlocked_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "card_id"]
     }
   },
   "firestore": {
+    "/album_cards/{cardId}": {
+      "schema": "AlbumCard",
+      "description": "Convention album cards definition"
+    },
+    "/user_cards/{userCardId}": {
+      "schema": "UserCard",
+      "description": "Cards collected by players in their event album"
+    },
     "/game_settings/{settingsId}": {
       "schema": "GameSettings",
       "description": "Global game configuration parameters"

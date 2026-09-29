@@ -14,6 +14,7 @@ import { WheelView, MysteryView } from "@/components/game/WheelAndMystery";
 import { AuctionView } from "@/components/game/AuctionView";
 import { LiveRipView } from "@/components/game/LiveRipView";
 import { TreasureView } from "@/components/game/TreasureView";
+import { PlayerInspectModal } from "@/components/chat/PlayerInspectModal";
 
 import { SkinsMarket } from "@/components/game/SkinsMarket";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -44,6 +45,7 @@ function PlayPage() {
   const [interaction, setInteraction] = useState<{ kind: "store" | "npc"; id: string } | null>(null);
   const [treasureId, setTreasureId] = useState<string | null>(null);
   const [nearby, setNearby] = useState<Nearby>(null);
+  const [inspectedPlayer, setInspectedPlayer] = useState<{ user_id: string; username?: string } | null>(null);
 
   const [chatOverlay, setChatOverlay] = useState<{ conversationId: string; name: string } | null>(null);
   const [showChat, setShowChat] = useState(false);
@@ -242,6 +244,7 @@ function PlayPage() {
                   touchInputRef={touchInputRef}
                   onInteract={openInteraction}
                   onNearby={setNearby}
+                  onInspectPlayer={setInspectedPlayer}
                 />
               ) : (
               <GameViewport
@@ -258,6 +261,7 @@ function PlayPage() {
                 touchInputRef={touchInputRef}
                 onInteract={openInteraction}
                 onNearby={setNearby}
+                onInspectPlayer={setInspectedPlayer}
               />
               )
             ) : (
@@ -507,6 +511,15 @@ function StoreModal({ storeId, onClose, onChat }: { storeId: string; onClose: ()
             </div>
           </div>
         </div>
+      )}
+
+      {inspectedPlayer && (
+        <PlayerInspectModal
+          playerId={inspectedPlayer.user_id}
+          initialUsername={inspectedPlayer.username}
+          onClose={() => setInspectedPlayer(null)}
+          onStartChat={(pid, uname) => startConversationWith("npc", pid, uname)}
+        />
       )}
     </div>
   );

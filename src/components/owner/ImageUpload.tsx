@@ -12,8 +12,22 @@ type Props = {
 
 const TEN_YEARS = 60 * 60 * 24 * 365 * 10;
 
-async function compressImageFile(file: File, maxDim = 800, quality = 0.82): Promise<{ dataUrl: string; blob: Blob }> {
+async function compressImageFile(file: File, folder = "misc", maxDim = 1200, quality = 0.88): Promise<{ dataUrl: string; blob: Blob; ext: string; mime: string }> {
   return new Promise((resolve, reject) => {
+    const isTransparentFormat =
+      file.type === "image/png" ||
+      file.type === "image/webp" ||
+      file.name.toLowerCase().endsWith(".png") ||
+      file.name.toLowerCase().endsWith(".webp") ||
+      folder === "characters" ||
+      folder === "cosmetics" ||
+      folder === "sprites" ||
+      folder === "stickers" ||
+      folder === "cards";
+
+    const targetMime = isTransparentFormat ? "image/png" : "image/jpeg";
+    const ext = isTransparentFormat ? "png" : "jpg";
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new window.Image();
@@ -31,17 +45,20 @@ async function compressImageFile(file: File, maxDim = 800, quality = 0.82): Prom
         const ctx = canvas.getContext("2d");
         if (!ctx) {
           const raw = (e.target?.result as string) || "";
-          resolve({ dataUrl: raw, blob: file });
+          resolve({ dataUrl: raw, blob: file, ext, mime: targetMime });
           return;
         }
+        // Ensure background is cleared to preserve transparent alpha pixels
+        ctx.clearRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+
+        const dataUrl = canvas.toDataURL(targetMime, targetMime === "image/png" ? undefined : quality);
         canvas.toBlob(
           (blob) => {
-            resolve({ dataUrl, blob: blob || file });
+            resolve({ dataUrl, blob: blob || file, ext, mime: targetMime });
           },
-          "image/jpeg",
-          quality
+          targetMime,
+          targetMime === "image/png" ? undefined : quality
         );
       };
       img.onerror = () => reject(new Error("שגיאה בטעינת קובץ תמונה"));
@@ -65,12 +82,11 @@ export function ImageUpload({ value, onChange, folder = "misc", label }: Props) 
     setUploading(true);
     setFileName(file.name);
     try {
-      const { dataUrl, blob } = await compressImageFile(file);
-      const ext = "jpg";
+      const { dataUrl, blob, ext, mime } = await compressImageFile(file, folder);
       const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
       const { error } = await supabase.storage.from("assets").upload(path, blob, {
         upsert: false,
-        contentType: "image/jpeg",
+        contentType: mime,
       });
       if (error) {
         toast.error(error.message);
@@ -82,7 +98,7 @@ export function ImageUpload({ value, onChange, folder = "misc", label }: Props) 
       const finalUrl = signed?.signedUrl || dataUrl;
       if (finalUrl) {
         onChange(finalUrl);
-        toast.success("תמונה הועלתה בהצלחה");
+        toast.success("תמונה הועלתה בהצלחה (ללא רקע שחור)");
       } else {
         toast.error("שגיאה בהפקת קישור");
       }

@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
+import { unlockCardForUser, type CardRarity } from "@/lib/album-cards";
 
 type BoxState = {
   ok: boolean;
@@ -49,6 +50,31 @@ export function TreasureView({ boxId, onClose }: { boxId: string; onClose: () =>
     const res = data as unknown as { ok?: boolean; reward?: Record<string, unknown> };
     setPrize(res?.reward ?? {});
     toast.success("התיבה נפתחה! 🎉");
+
+    // Check if the treasure box awards an album card
+    if (user) {
+      supabase
+        .from("treasure_boxes")
+        .select("reward, name, id")
+        .eq("id", boxId)
+        .maybeSingle()
+        .then(({ data: tbRow }) => {
+          const boxReward = (tbRow?.reward as Record<string, unknown> | null) || null;
+          if (boxReward && boxReward.has_card) {
+            unlockCardForUser(user.id, {
+              card_id: `tb-${boxId}`,
+              card_number: Number(boxReward.card_number) || 2,
+              title: String(boxReward.card_title || tbRow?.name || "אוצר הכנס"),
+              image_url: String(boxReward.card_image_url || "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=600&auto=format&fit=crop&q=80"),
+              description: String(boxReward.card_description || `נאסף מפתיחת ${tbRow?.name || "תיבת אוצר"}`),
+              rarity: (boxReward.card_rarity as CardRarity) || "rare",
+              source_type: "treasure",
+              source_name: tbRow?.name || "תיבת אוצר",
+            }).catch(console.warn);
+          }
+        });
+    }
+
     refreshProfile();
     qc.invalidateQueries({ queryKey: ["treasure-state", boxId] });
     qc.invalidateQueries({ queryKey: ["clue-progress"] });

@@ -2,45 +2,209 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useState } from "react";
+import {
+  fetchAllAlbumCards,
+  subscribeUserCards,
+  type AlbumCard,
+  type UserCollectedCard,
+} from "@/lib/album-cards";
+import { DigitalAlbum } from "@/components/album/DigitalAlbum";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sparkles, Trophy, ShoppingBag, Shirt, Diamond, Star, Award, Shield } from "lucide-react";
 
-export const Route = createFileRoute("/_authenticated/profile")({ component: ProfilePage });
+export const Route = createFileRoute("/_authenticated/profile")({
+  component: ProfilePage,
+  head: () => ({
+    meta: [
+      { title: "הפרופיל שלי ואלבום הכנס | COLT Market World" },
+      {
+        name: "description",
+        content: "צפו בפרופיל האישי, רמת השחקן, פריטי האספנות והאלבום הדיגיטלי של כנס COLT.",
+      },
+    ],
+  }),
+});
 
 function ProfilePage() {
-  const { profile, user } = useAuth();
+  const { profile, user, isOwner } = useAuth();
+  const [allCards, setAllCards] = useState<AlbumCard[]>([]);
+  const [userCards, setUserCards] = useState<UserCollectedCard[]>([]);
+  const [loadingAlbum, setLoadingAlbum] = useState(true);
+
+  // Load all available album cards definition
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cards = await fetchAllAlbumCards();
+        if (!cancelled) setAllCards(cards);
+      } catch (err) {
+        console.error("Failed to load album cards:", err);
+      } finally {
+        if (!cancelled) setLoadingAlbum(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Real-time subscription to user's collected cards
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = subscribeUserCards(user.id, (cards) => {
+      setUserCards(cards);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [user]);
+
   const { data: cos = [] } = useQuery({
     queryKey: ["my-cos", user?.id],
     enabled: !!user,
-    queryFn: async () => (await supabase.from("player_cosmetics").select("cosmetic_id, cosmetics(name, layer_type)").eq("user_id", user!.id)).data ?? [],
+    queryFn: async () =>
+      (
+        await supabase
+          .from("player_cosmetics")
+          .select("cosmetic_id, cosmetics(name, layer_type)")
+          .eq("user_id", user!.id)
+      ).data ?? [],
   });
+
   const { data: orders = [] } = useQuery({
     queryKey: ["my-orders", user?.id],
     enabled: !!user,
-    queryFn: async () => (await supabase.from("orders").select("*").eq("user_id", user!.id).order("created_at", { ascending: false }).limit(10)).data ?? [],
+    queryFn: async () =>
+      (
+        await supabase
+          .from("orders")
+          .select("*")
+          .eq("user_id", user!.id)
+          .order("created_at", { ascending: false })
+          .limit(10)
+      ).data ?? [],
   });
+
   if (!profile) return null;
+
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
-      <div className="chrome-panel p-6 lg:col-span-1">
-        <div className="mx-auto grid h-24 w-24 place-items-center rounded-full bg-primary text-4xl text-primary-foreground">👤</div>
-        <h1 className="mt-3 text-center text-2xl font-bold">{profile.username}</h1>
-        <p className="text-center text-xs text-muted-foreground">Level {profile.level} · {profile.xp} XP</p>
-        <div className="mt-4 grid grid-cols-2 gap-2 text-center text-sm">
-          <div className="rounded-xl bg-muted p-2">💎 {profile.credits}</div>
-          <div className="rounded-xl bg-muted p-2">🎨 {cos.length} items</div>
+    <div className="space-y-4">
+      {/* Player Header Card */}
+      <div className="chrome-panel overflow-hidden p-0">
+        <div className="relative bg-gradient-to-r from-pink-500 via-purple-600 to-indigo-700 p-6 text-white">
+          <div className="relative z-10 flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col items-center gap-4 sm:flex-row">
+              <div className="relative grid h-24 w-24 place-items-center rounded-2xl bg-white/20 text-4xl shadow-inner backdrop-blur border-2 border-white/40">
+                👤
+                {isOwner && (
+                  <span
+                    title="מנהל / בעלים"
+                    className="absolute -bottom-2 -right-2 grid h-7 w-7 place-items-center rounded-full bg-amber-400 text-slate-950 font-black shadow-md border-2 border-white text-xs"
+                  >
+                    👑
+                  </span>
+                )}
+              </div>
+
+              <div className="text-center sm:text-right">
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                  <h1 className="text-2xl font-black md:text-3xl">{profile.username}</h1>
+                  {isOwner && (
+                    <span className="rounded-full bg-amber-400 px-2.5 py-0.5 text-xs font-black text-slate-950 shadow">
+                      מנהל ראשי
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs">
+                  <span className="rounded-full bg-white/20 px-3 py-1 font-bold backdrop-blur">
+                    ⭐ רמה {profile.level} ({profile.xp} XP)
+                  </span>
+                  <span className="rounded-full bg-white/20 px-3 py-1 font-bold backdrop-blur">
+                    💎 {profile.credits} ג'מים
+                  </span>
+                  <span className="rounded-full bg-white/20 px-3 py-1 font-bold backdrop-blur">
+                    🃏 {userCards.length} / {allCards.length} קלפים באלבום
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-center text-xs">
+              <div className="rounded-2xl bg-white/10 p-3 backdrop-blur border border-white/20 min-w-[90px]">
+                <div className="text-lg font-black">{cos.length}</div>
+                <div className="text-[10px] text-white/80">פריטי לבוש</div>
+              </div>
+              <div className="rounded-2xl bg-white/10 p-3 backdrop-blur border border-white/20 min-w-[90px]">
+                <div className="text-lg font-black">{orders.length}</div>
+                <div className="text-[10px] text-white/80">הזמנות</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <div className="chrome-panel p-6 lg:col-span-2">
-        <h2 className="mb-2 font-bold">Recent orders</h2>
-        <ul className="space-y-1 text-sm">
-          {orders.map((o) => (
-            <li key={o.id} className="flex justify-between border-b border-border py-1">
-              <span>{o.order_type}</span>
-              <span className="text-muted-foreground">{o.status}</span>
-            </li>
-          ))}
-          {!orders.length && <li className="text-xs text-muted-foreground">No orders yet.</li>}
-        </ul>
-      </div>
+
+      {/* Main Tabs: Digital Album vs Orders */}
+      <Tabs defaultValue="album" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 rounded-2xl bg-muted p-1">
+          <TabsTrigger value="album" className="rounded-xl font-bold flex items-center justify-center gap-1.5">
+            <Trophy className="h-4 w-4 text-amber-500" />
+            <span>אלבום כנס ומדבקות ({userCards.length}/{allCards.length})</span>
+          </TabsTrigger>
+          <TabsTrigger value="orders" className="rounded-xl font-bold flex items-center justify-center gap-1.5">
+            <ShoppingBag className="h-4 w-4 text-primary" />
+            <span>היסטוריית הזמנות ({orders.length})</span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="album" className="mt-4">
+          <div className="chrome-panel p-4 md:p-6">
+            {loadingAlbum ? (
+              <div className="py-12 text-center text-sm text-muted-foreground">
+                טוען את אלבום הכנס והקלפים...
+              </div>
+            ) : (
+              <DigitalAlbum
+                allCards={allCards}
+                userCards={userCards}
+                username={profile.username}
+                isOwnerView={isOwner}
+              />
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="orders" className="mt-4">
+          <div className="chrome-panel p-6">
+            <h2 className="mb-3 text-lg font-bold flex items-center gap-2">
+              <ShoppingBag className="h-5 w-5 text-primary" />
+              <span>הזמנות אחרונות</span>
+            </h2>
+            <ul className="divide-y divide-border text-sm">
+              {orders.map((o) => (
+                <li key={o.id} className="flex items-center justify-between py-2.5">
+                  <div>
+                    <div className="font-semibold">{o.order_type}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {new Date(o.created_at).toLocaleDateString("he-IL")}
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">
+                    {o.status}
+                  </span>
+                </li>
+              ))}
+              {!orders.length && (
+                <li className="py-6 text-center text-xs text-muted-foreground">
+                  אין הזמנות עדיין בחשבונך.
+                </li>
+              )}
+            </ul>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

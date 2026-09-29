@@ -41,6 +41,7 @@ type Props = {
   touchInputRef?: MutableRefObject<{ x: number; y?: number; jump: boolean }>;
   onInteract?: (kind: "store" | "npc" | "door" | "treasure", id: string, extra?: { targetMapId?: string }) => void;
   onNearby?: (n: Nearby) => void;
+  onInspectPlayer?: (player: OtherPlayer) => void;
 };
 
 type EquippedCosmetic = {
@@ -134,7 +135,7 @@ export function Game3DViewport({
   viewportWidth = 1280, viewportHeight = 720,
   mapId, objects, stores, npcs,
   isPublicRoom = false, backgroundColor, floorType, floorColor, floorTextureUrl,
-  touchInputRef, onInteract, onNearby,
+  touchInputRef, onInteract, onNearby, onInspectPlayer,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const { user, profile } = useAuth();
@@ -160,6 +161,7 @@ export function Game3DViewport({
   const nearbyRef = useRef<string | null>(null);
   const onNearbyRef = useRef(onNearby);
   const onInteractRef = useRef(onInteract);
+  const onInspectPlayerRef = useRef(onInspectPlayer);
   const [pov, setPov] = useState(false);
   const povRef = useRef(false);
   povRef.current = pov;
@@ -176,6 +178,7 @@ export function Game3DViewport({
   };
   onNearbyRef.current = onNearby;
   onInteractRef.current = onInteract;
+  onInspectPlayerRef.current = onInspectPlayer;
 
   // ---- base character sprites
   useEffect(() => {
@@ -687,7 +690,13 @@ export function Game3DViewport({
         const hits = raycaster.intersectObjects(pickables.map((p) => p.mesh), true);
         if (!hits.length) return;
         const target = pickables.find((p) => p.mesh === hits[0].object || (p.mesh as { children?: unknown[] }).children?.includes(hits[0].object));
-        if (target) onInteractRef.current?.(target.kind, target.id, target.targetMapId ? { targetMapId: target.targetMapId } : undefined);
+        if (target) {
+          if ((target as any).player) {
+            onInspectPlayerRef.current?.((target as any).player);
+            return;
+          }
+          onInteractRef.current?.(target.kind, target.id, target.targetMapId ? { targetMapId: target.targetMapId } : undefined);
+        }
       };
       dom.addEventListener("click", onClick);
       cleanupFns.push(() => dom.removeEventListener("click", onClick));
@@ -760,6 +769,7 @@ export function Game3DViewport({
             const label = addLabel(o.username ?? "שחקן", 0, 0, 0, 0.7);
             av = { ...base, label, name: o.username ?? "" };
             otherAvatars.set(o.user_id, av);
+            pickables.push({ mesh: av.sp, kind: "player" as never, id: o.user_id, player: o } as never);
           }
           // Load a real 3D model for this player once, when their character has one.
           const modelUrl = otherModelsRef.current[o.user_id];

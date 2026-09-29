@@ -101,11 +101,49 @@ export function NotificationListener() {
       )
       .subscribe();
 
+    window.addEventListener("card-unlocked", handleCardUnlocked);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("card-unlocked", handleCardUnlocked);
       supabase.removeChannel(ch);
     };
   }, [user, qc, refreshProfile]);
+
+  function handleCardUnlocked(e: Event) {
+    const card = (e as CustomEvent).detail;
+    if (!card) return;
+    toast.custom(
+      (id) => (
+        <div className="chrome-panel flex w-[360px] max-w-[94vw] items-center gap-3 p-3 text-right bg-gradient-to-r from-pink-500/10 via-purple-500/15 to-amber-500/10 border-2 border-amber-400" dir="rtl">
+          {card.card_image_url ? (
+            <img src={card.card_image_url} alt="" className="h-16 w-12 shrink-0 rounded-lg object-cover border border-white shadow-md" />
+          ) : (
+            <div className="grid h-16 w-12 shrink-0 place-items-center rounded-lg bg-amber-400 text-slate-950 font-black text-2xl">
+              🃏
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1">
+              <span>✨ קלף חדש באלבום הכנס!</span>
+            </div>
+            <div className="font-black text-sm leading-tight mt-0.5">{card.card_title}</div>
+            <div className="text-[11px] text-muted-foreground line-clamp-1">{card.card_description || `קלף מספר #${card.card_number}`}</div>
+            <a href="/profile" className="mt-1 inline-block text-xs font-bold text-primary underline">
+              צפו באלבום בפרופיל 📖
+            </a>
+          </div>
+          <button
+            onClick={() => toast.dismiss(id)}
+            className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      ),
+      { duration: 10000, position: "top-center" }
+    );
+  }
 
   return null;
 }
