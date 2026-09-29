@@ -27,13 +27,18 @@
   <body>
     <div id="root"></div>
 
-    <!-- PWA Auto-Registration and Cache Invalidator -->
+    <!-- Immediate Cache Invalidator & SW Reset -->
     <script>
-      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').then((reg) => {
-            reg.update().catch(() => {});
-          }).catch(() => {});
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for (var i = 0; i < registrations.length; i++) {
+            registrations[i].unregister();
+          }
+        });
+      }
+      if (window.caches) {
+        caches.keys().then(function(keys) {
+          keys.forEach(function(key) { caches.delete(key); });
         });
       }
     </script>
