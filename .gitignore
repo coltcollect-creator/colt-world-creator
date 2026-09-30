@@ -11,4 +11,5 @@ coverage/
 .wrangler/
 bun.lock*
 .github_token*
+.firebase_token*
 *.secret
