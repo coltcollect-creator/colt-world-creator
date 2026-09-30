@@ -12,4 +12,5 @@ coverage/
 bun.lock*
 .github_token*
 .firebase_token*
+.firebase/
 *.secret
