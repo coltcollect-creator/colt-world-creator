@@ -12,6 +12,7 @@ import {
 import { DigitalAlbum } from "@/components/album/DigitalAlbum";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sparkles, Trophy, ShoppingBag, Shirt, Diamond, Star, Award, Shield } from "lucide-react";
+import { getLevelProgress } from "@/lib/progression";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   component: ProfilePage,
@@ -145,6 +146,51 @@ function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* XP Level Progress Card */}
+      {(() => {
+        const prog = getLevelProgress(profile.xp || 0);
+        return (
+          <div className="chrome-panel rounded-3xl p-4 sm:p-5 bg-card/90 border border-primary/25 shadow-lg">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-3">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-tr from-amber-500 to-primary text-primary-foreground font-black text-lg shadow-md shadow-primary/20">
+                  Lv {profile.level}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-base text-foreground">רמה {profile.level}</span>
+                    <span className="text-xs font-bold text-muted-foreground font-mono">({profile.xp.toLocaleString()} XP)</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {prog.isMaxLevel ? "🏆 הגעת לרמה המקסימלית במשחק!" : `עוד ${prog.remainingXp.toLocaleString()} XP לעלייה לרמה ${prog.nextMilestone?.level}`}
+                  </p>
+                </div>
+              </div>
+
+              {!prog.isMaxLevel && prog.nextMilestone?.reward_label && (
+                <div className="rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-bold text-primary flex items-center gap-1.5 shadow-sm">
+                  <span>🎁 פרס ברמה {prog.nextMilestone.level}:</span>
+                  <span className="text-foreground">{prog.nextMilestone.reward_label}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Progress track */}
+            <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted/80 p-0.5">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-amber-500 via-primary to-yellow-400 transition-all duration-700 shadow-sm"
+                style={{ width: `${prog.progressPercent}%` }}
+              />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+              <span>{prog.currentLevelXp.toLocaleString()} XP (רמה {prog.currentLevel})</span>
+              <span className="font-bold text-primary">{prog.progressPercent}% לקראת רמה {prog.nextMilestone?.level ?? prog.currentLevel}</span>
+              <span>{prog.nextLevelXp.toLocaleString()} XP</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Main Tabs: Digital Album vs Orders */}
       <Tabs defaultValue="album" className="w-full">

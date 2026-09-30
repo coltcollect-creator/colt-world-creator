@@ -3,38 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Trash2, Save, Sparkles, Award, Gift, Shield } from "lucide-react";
+import { DEFAULT_LEVELS, type LevelMilestone } from "@/lib/progression";
 
-export type LevelMilestone = {
-  level: number;
-  xp_required: number;
-  reward_type: "credits" | "title" | "cosmetic" | "none";
-  reward_value: number | string;
-  reward_title_text?: string;
-  reward_label?: string;
-};
-
-const DEFAULT_LEVELS: LevelMilestone[] = [
-  { level: 1, xp_required: 0, reward_type: "none", reward_value: 0, reward_label: "נקודת התחלה" },
-  { level: 2, xp_required: 100, reward_type: "credits", reward_value: 10, reward_label: "💎 10 ג'מים" },
-  { level: 3, xp_required: 250, reward_type: "credits", reward_value: 15, reward_label: "💎 15 ג'מים" },
-  { level: 4, xp_required: 450, reward_type: "title", reward_value: "חוקר יריד", reward_title_text: "חוקר יריד", reward_label: "👑 תואר: חוקר יריד" },
-  { level: 5, xp_required: 700, reward_type: "credits", reward_value: 25, reward_label: "💎 25 ג'מים" },
-  { level: 6, xp_required: 1050, reward_type: "credits", reward_value: 30, reward_label: "💎 30 ג'מים" },
-  { level: 7, xp_required: 1500, reward_type: "credits", reward_value: 40, reward_label: "💎 40 ג'מים" },
-  { level: 8, xp_required: 2100, reward_type: "title", reward_value: "צייד קלפים", reward_title_text: "צייד קלפים", reward_label: "👑 תואר: צייד קלפים" },
-  { level: 9, xp_required: 2800, reward_type: "credits", reward_value: 50, reward_label: "💎 50 ג'מים" },
-  { level: 10, xp_required: 3650, reward_type: "credits", reward_value: 100, reward_label: "💎 100 ג'מים + 🏆 תואר מאסטר" },
-  { level: 11, xp_required: 4650, reward_type: "credits", reward_value: 60, reward_label: "💎 60 ג'מים" },
-  { level: 12, xp_required: 5800, reward_type: "credits", reward_value: 70, reward_label: "💎 70 ג'מים" },
-  { level: 13, xp_required: 7100, reward_type: "title", reward_value: "אביר האספנים", reward_title_text: "אביר האספנים", reward_label: "👑 תואר: אביר האספנים" },
-  { level: 14, xp_required: 8600, reward_type: "credits", reward_value: 85, reward_label: "💎 85 ג'מים" },
-  { level: 15, xp_required: 10300, reward_type: "credits", reward_value: 120, reward_label: "💎 120 ג'מים" },
-  { level: 16, xp_required: 12200, reward_type: "credits", reward_value: 100, reward_label: "💎 100 ג'מים" },
-  { level: 17, xp_required: 14300, reward_type: "credits", reward_value: 110, reward_label: "💎 110 ג'מים" },
-  { level: 18, xp_required: 16600, reward_type: "title", reward_value: "אגדת COLT", reward_title_text: "אגדת COLT", reward_label: "👑 תואר: אגדת COLT" },
-  { level: 19, xp_required: 19100, reward_type: "credits", reward_value: 150, reward_label: "💎 150 ג'מים" },
-  { level: 20, xp_required: 22000, reward_type: "credits", reward_value: 250, reward_label: "💎 250 ג'מים + 👑 תואר עליון" },
-];
+export type { LevelMilestone };
 
 export function LevelsBuilderPanel() {
   const qc = useQueryClient();

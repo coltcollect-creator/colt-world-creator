@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { addPlayerXp } from "@/lib/progression";
 
 export type QuestProgressEvent = {
   questId: string;
@@ -142,11 +143,14 @@ export async function trackQuestAction(
 
       // Auto-grant rewards directly to player balance upon completion
       if (isCompleted && (creditReward > 0 || xpReward > 0)) {
-        const { data: prof } = await supabase.from("profiles").select("credits, xp").eq("id", user.id).maybeSingle();
+        const { data: prof } = await supabase.from("profiles").select("credits, xp, level").eq("id", user.id).maybeSingle();
         if (prof) {
           const newCredits = (prof.credits || 0) + creditReward;
-          const newXp = (prof.xp || 0) + xpReward;
-          await supabase.from("profiles").update({ credits: newCredits, xp: newXp }).eq("id", user.id);
+          await supabase.from("profiles").update({ credits: newCredits }).eq("id", user.id);
+
+          if (xpReward > 0) {
+            await addPlayerXp(user.id, xpReward, `משימה: ${q.name || "הושלמה"}`);
+          }
           
           if (creditReward > 0) {
             await supabase.from("credit_transactions").insert({

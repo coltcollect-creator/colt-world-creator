@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "sonner";
 import { I18nProvider } from "@/lib/i18n";
 import { QuestCompletionToast } from "@/components/game/QuestCompletionToast";
+import { LevelUpCelebration } from "@/components/game/LevelUpCelebration";
 import { NotificationListener } from "@/components/NotificationListener";
 import { TourProvider } from "@/lib/tour";
 
@@ -122,6 +123,7 @@ function RootComponent() {
           <Outlet />
           </TourProvider>
           <QuestCompletionToast />
+          <LevelUpCelebration />
           <NotificationListener />
           <Toaster position="top-right" richColors />
         </AuthProvider>

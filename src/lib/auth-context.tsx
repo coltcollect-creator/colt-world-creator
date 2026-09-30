@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { calculateLevel, checkAndApplyLevelUp } from "@/lib/progression";
 
 type Profile = {
   id: string;
@@ -65,6 +66,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supabase.from("profiles").update({ credits: 9845, username: "ColtCollect" }).eq("id", uid).then(() => {});
     }
 
+    // Ensure profile level matches their XP accumulation and grant pending level rewards
+    if (prof) {
+      const expectedLevel = calculateLevel(prof.xp || 0);
+      if ((prof.level || 1) < expectedLevel) {
+        checkAndApplyLevelUp(uid, prof.xp || 0).then((res) => {
+          if (res.leveledUp) {
+            setProfile((prev) => prev ? { ...prev, level: res.newLevel, credits: res.newCredits } : prev);
+          }
+        }).catch(() => {});
+        prof.level = expectedLevel;
+      }
+    }
+
     setProfile(prof);
     setIsOwner(ownerStatus);
   };
@@ -98,12 +112,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Live balance: refresh when the profile row changes, or when the app
-  // signals a credit-affecting action (purchase, spin, reward...).
+  // signals a credit-affecting action (purchase, spin, reward, quest, level-up).
   useEffect(() => {
     if (!user) return;
     const uid = user.id;
     const onChanged = () => { loadProfile(uid); };
     window.addEventListener("credits-changed", onChanged);
+    window.addEventListener("xp-changed", onChanged);
+    window.addEventListener("level-up", onChanged);
     const channel = supabase
       .channel(`profile-${uid}`)
       .on(
@@ -114,6 +130,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .subscribe();
     return () => {
       window.removeEventListener("credits-changed", onChanged);
+      window.removeEventListener("xp-changed", onChanged);
+      window.removeEventListener("level-up", onChanged);
       supabase.removeChannel(channel);
     };
   }, [user]);

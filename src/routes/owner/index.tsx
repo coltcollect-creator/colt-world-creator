@@ -23,6 +23,7 @@ import { importWooProducts } from "@/lib/woo.functions";
 import { WooSyncSettings } from "@/components/owner/WooSyncSettings";
 import { VendorProductsPanel } from "@/components/owner/VendorProductsPanel";
 import { LevelsBuilderPanel } from "@/components/owner/LevelsBuilderPanel";
+import { addPlayerXp, calculateLevel } from "@/lib/progression";
 import { AuditLogsPanel } from "@/components/owner/AuditLogsPanel";
 import { AlbumManagerPanel } from "@/components/owner/AlbumManagerPanel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -1029,6 +1030,9 @@ function PlayersPanel() {
   const [grantAmount, setGrantAmount] = useState<number>(100);
   const [grantReason, setGrantReason] = useState<string>("Manual owner adjustment");
   const [granting, setGranting] = useState(false);
+  const [xpModal, setXpModal] = useState<{ id: string; username: string; currentXp: number; currentLevel: number } | null>(null);
+  const [xpAmount, setXpAmount] = useState<number>(100);
+  const [adjustingXp, setAdjustingXp] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; username: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -1118,6 +1122,26 @@ function PlayersPanel() {
     }
   };
 
+  const executeXpAdjust = async () => {
+    if (!xpModal) return;
+    const amt = Number(xpAmount);
+    if (Number.isNaN(amt) || amt === 0) {
+      toast.error("אנא הזינו כמות XP תקינה");
+      return;
+    }
+    setAdjustingXp(true);
+    try {
+      const res = await addPlayerXp(xpModal.id, amt, "עדכון מנהל מערכת");
+      toast.success(res.leveledUp ? `ה-XP עודכן! השחקן עלה לרמה ${res.newLevel}! ⭐` : "ה-XP עודכן בהצלחה!");
+      setXpModal(null);
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message || "שגיאה בעדכון XP");
+    } finally {
+      setAdjustingXp(false);
+    }
+  };
+
   return (
     <div className="space-y-3 text-start">
       <div className="chrome-panel flex items-center gap-2 p-2 rounded-2xl">
@@ -1162,7 +1186,7 @@ function PlayersPanel() {
               <tr key={p.id} className="border-t border-border">
                 <td className="p-1 font-semibold">{p.username}</td>
                 <td className="p-1">{p.email_verified ? <span className="text-green-600">✅ מאומת</span> : <span className="text-amber-600">⚠️ לא מאומת</span>}</td>
-                <td className="p-1">{p.level}</td>
+                <td className="p-1 font-mono font-bold text-primary">Lv {p.level} <span className="text-[10px] text-muted-foreground font-normal">({p.xp || 0} XP)</span></td>
                 <td className="p-1 font-bold">💎 {p.credits}</td>
                 <td className="p-1">{p.is_muted ? "✓" : "—"}</td>
                 <td className="p-1">{p.is_suspended ? "✓" : "—"}</td>
@@ -1176,6 +1200,16 @@ function PlayersPanel() {
                     className="rounded bg-primary px-2 py-0.5 font-bold text-primary-foreground hover:opacity-90"
                   >
                     credits±
+                  </button>
+                  <button
+                    onClick={() => {
+                      setXpModal({ id: p.id, username: p.username, currentXp: p.xp || 0, currentLevel: p.level || 1 });
+                      setXpAmount(100);
+                    }}
+                    className="rounded bg-amber-500/20 px-2 py-0.5 font-bold text-amber-700 dark:text-amber-400 hover:bg-amber-500/30"
+                    title="עדכן נקודות ניסיון (XP) ורמת שחקן"
+                  >
+                    XP±
                   </button>
                   <button
                     onClick={async () => {
@@ -1285,6 +1319,94 @@ function PlayersPanel() {
                 className="btn-plastic text-xs font-bold disabled:opacity-50"
               >
                 {granting ? "מעדכן…" : "אישור וביצוע ✅"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Adjust XP Modal */}
+      {xpModal && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/60 p-4" onClick={() => setXpModal(null)}>
+          <div dir="rtl" className="chrome-panel w-full max-w-md p-5 text-right shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h3 className="text-lg font-black text-amber-500 flex items-center gap-1.5">
+                <span>⭐ עדכון נקודות ניסיון (XP) ורמה</span>
+              </h3>
+              <button onClick={() => setXpModal(null)} className="grid h-7 w-7 place-items-center rounded-full bg-muted text-sm font-bold">✕</button>
+            </div>
+            <div className="mt-4 space-y-4 text-sm">
+              <div className="rounded-xl bg-muted/60 p-3">
+                <div className="text-xs text-muted-foreground">שחקן: <span className="font-bold text-foreground">{xpModal.username}</span></div>
+                <div className="mt-1 flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">ניסיון נוכחי: <strong className="text-foreground font-mono">{xpModal.currentXp.toLocaleString()} XP</strong></span>
+                  <span className="font-bold text-primary">רמה נוכחית: Lv {xpModal.currentLevel}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">כמות XP להוספה או להפחתה (לדוגמה 100 או -50):</label>
+                <input
+                  type="number"
+                  className="w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-base font-bold outline-none focus:border-primary font-mono"
+                  value={xpAmount}
+                  onChange={(e) => setXpAmount(parseInt(e.target.value, 10) || 0)}
+                />
+              </div>
+
+              {/* Quick adjustment buttons */}
+              <div className="flex flex-wrap gap-1.5">
+                {[50, 100, 250, 500, 1000, 2500].map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => setXpAmount(num)}
+                    className="chrome-panel px-2.5 py-1 text-xs font-bold hover:bg-amber-500/20"
+                  >
+                    +{num}
+                  </button>
+                ))}
+                {[-50, -100, -500].map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => setXpAmount(num)}
+                    className="chrome-panel px-2.5 py-1 text-xs font-bold text-destructive hover:bg-destructive/20"
+                  >
+                    {num}
+                  </button>
+                ))}
+              </div>
+
+              {(() => {
+                const targetXp = Math.max(0, (xpModal.currentXp || 0) + xpAmount);
+                const projectedLvl = calculateLevel(targetXp);
+                const willLevelUp = projectedLvl > xpModal.currentLevel;
+                return (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs space-y-1">
+                    <div>
+                      XP לאחר העדכון: <span className="font-black text-foreground font-mono">{targetXp.toLocaleString()} XP</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>רמה צפויה:</span>
+                      <span className={`font-black ${willLevelUp ? "text-amber-500 text-sm animate-pulse" : "text-primary"}`}>
+                        Lv {projectedLvl} {willLevelUp && `(עלייה מ-Lv ${xpModal.currentLevel}! 🎉)`}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2 border-t border-border pt-3">
+              <button type="button" onClick={() => setXpModal(null)} className="chrome-panel px-4 py-2 text-xs font-bold">ביטול</button>
+              <button
+                type="button"
+                onClick={executeXpAdjust}
+                disabled={adjustingXp || xpAmount === 0}
+                className="btn-plastic text-xs font-bold disabled:opacity-50 bg-amber-500 text-black hover:bg-amber-400 shadow-md"
+              >
+                {adjustingXp ? "מעדכן…" : "אישור ועדכון XP ⭐"}
               </button>
             </div>
           </div>

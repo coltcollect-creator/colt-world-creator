@@ -129,8 +129,17 @@ function AuthedLayout() {
           <TourButton />
           {profile && (
             <>
-              <span className="chrome-panel px-2 py-1 text-[11px] md:text-xs">💎 {profile.credits}</span>
-              <span className="hidden sm:inline chrome-panel px-2 py-1 text-[11px] md:text-xs">Lv {profile.level}</span>
+              <Link to="/credits" className="chrome-panel px-2.5 py-1 text-[11px] md:text-xs font-bold hover:border-primary transition-colors">
+                💎 {profile.credits}
+              </Link>
+              <Link
+                to="/profile"
+                title={`${profile.xp || 0} XP`}
+                className="hidden sm:inline-flex items-center gap-1.5 chrome-panel px-2.5 py-1 text-[11px] md:text-xs hover:border-primary transition-colors"
+              >
+                <span className="font-black text-amber-500">⭐ Lv {profile.level}</span>
+                <span className="text-[10px] text-muted-foreground font-mono">({profile.xp || 0} XP)</span>
+              </Link>
               <span className="hidden md:inline font-semibold">{profile.username}</span>
             </>
           )}
@@ -166,7 +175,12 @@ function AuthedLayout() {
                 <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/15 font-bold">{profile.username?.slice(0,1)?.toUpperCase() ?? "?"}</div>
                 <div className="min-w-0">
                   <div className="truncate font-semibold text-sm">{profile.username}</div>
-                  <div className="text-[11px] text-muted-foreground">💎 {profile.credits} · Lv {profile.level}</div>
+                  <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                    <span>💎 {profile.credits}</span>
+                    <span>·</span>
+                    <span className="font-bold text-amber-500">⭐ Lv {profile.level}</span>
+                    <span className="text-[10px] font-mono">({profile.xp || 0} XP)</span>
+                  </div>
                 </div>
               </div>
             )}

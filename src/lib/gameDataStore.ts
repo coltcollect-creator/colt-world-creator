@@ -40,6 +40,8 @@ const requiredTables = [
   "store_conversations",
   "store_messages",
   "vendors",
+  "titles",
+  "player_titles",
 ];
 
 for (const t of requiredTables) {

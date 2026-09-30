@@ -22,6 +22,7 @@ import {
 } from "firebase/auth";
 import { db, auth, googleProvider, metaProvider, appleProvider } from "@/lib/firebase";
 import { gameDataStore } from "@/lib/gameDataStore";
+import { calculateLevel, checkAndApplyLevelUp, addPlayerXp } from "@/lib/progression";
 
 export function cleanForFirestore(obj: any): any {
   if (obj === null || obj === undefined) return null;
@@ -187,7 +188,7 @@ function ensureLocalProfile(uid: string, email?: string, username?: string) {
       avatar_config: isOwnerEmail ? (originalOwnerProf?.avatar_config || { _initialized: true }) : { _initialized: true },
       character_id: finalCharId,
       credits: defaultCredits,
-      level: 1,
+      level: calculateLevel(defaultXp),
       xp: defaultXp,
       active_title_id: null,
       current_map_id: "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9", // מפה ראשית
@@ -203,15 +204,21 @@ function ensureLocalProfile(uid: string, email?: string, username?: string) {
     // If existing profile was empty or uninitialized or owner got downgraded
     const isOldNinja = existing.character_id === "d14fed03-b2c5-4205-b2ff-a151345151ee";
     const needsOwnerRestore = isOwnerEmail && (existing.credits < 1000 || existing.credits == null || existing.username === "Player" || existing.username?.startsWith("guest_"));
+    const calculatedLvl = calculateLevel(existing.xp || defaultXp);
+    const needsLevelFix = (existing.level || 1) < calculatedLvl;
 
-    if (needsOwnerRestore || isOldNinja) {
+    if (needsOwnerRestore || isOldNinja || needsLevelFix) {
       const updates: any = {};
       if (needsOwnerRestore) {
         updates.username = "ColtCollect";
         updates.display_name = "ColtCollect";
         updates.credits = originalOwnerProf?.credits ?? 9845;
         updates.xp = originalOwnerProf?.xp ?? 225;
+        updates.level = calculateLevel(updates.xp);
         updates.email_verified = true;
+      }
+      if (needsLevelFix && !updates.level) {
+        updates.level = calculatedLvl;
       }
       if (isOldNinja) {
         updates.character_id = defaultCharId;
@@ -461,9 +468,20 @@ class QueryBuilder {
       }
 
       if (this.opType === "update") {
+        if (this.colName === "profiles" && this.payload && typeof this.payload === "object") {
+          if (this.payload.xp !== undefined && this.payload.level === undefined) {
+            this.payload.level = calculateLevel(Number(this.payload.xp) || 0);
+          }
+        }
+
         const idFilter = this.filters.find((f) => f.field === "id" && f.op === "==");
         if (idFilter && idFilter.value != null) {
           const directId = String(idFilter.value);
+          if (this.colName === "profiles" && this.payload?.xp !== undefined) {
+            try {
+              void checkAndApplyLevelUp(directId, Number(this.payload.xp));
+            } catch {}
+          }
           const updated = gameDataStore.updateRow(this.colName, directId, this.payload);
           notifyTableChange(this.colName, "UPDATE", updated || { id: directId, ...this.payload });
           if (SHARED_FIRESTORE_TABLES.has(this.colName)) {
@@ -815,14 +833,16 @@ export const supabase = {
               } catch {}
             }
             if (d) {
+              const playerXp = Number(d.xp) || 0;
+              const playerLvl = d.level ? Math.max(Number(d.level) || 1, calculateLevel(playerXp)) : calculateLevel(playerXp);
               return {
                 id: uid,
                 username: d.username || "Player",
                 display_name: d.display_name || d.username || "Player",
                 avatar_config: d.avatar_config || {},
                 character_id: d.character_id || null,
-                level: d.level || 1,
-                xp: d.xp || 0,
+                level: playerLvl,
+                xp: playerXp,
                 active_title_id: d.active_title_id || null,
               };
             }
@@ -899,14 +919,16 @@ export const supabase = {
       if (funcName === "claim_quest_reward") {
         const questId = params._quest_id;
         const qData = gameDataStore.getById("quests", questId);
-        const creditReward = qData?.credit_reward || 50;
-        const xpReward = qData?.xp_reward || 20;
+        const creditReward = Number(qData?.credit_reward || qData?.gems_reward || 50);
+        const xpReward = Number(qData?.xp_reward || 20);
 
-        const prof = gameDataStore.getById("profiles", activeUser.id) || { credits: 500, xp: 0 };
+        const prof = gameDataStore.getById("profiles", activeUser.id) || { credits: 500, xp: 0, level: 1 };
         const newCredits = (prof.credits || 0) + creditReward;
-        const newXp = (prof.xp || 0) + xpReward;
+        gameDataStore.updateRow("profiles", activeUser.id, { credits: newCredits });
 
-        gameDataStore.updateRow("profiles", activeUser.id, { credits: newCredits, xp: newXp });
+        // Add XP and trigger level up logic, rewards and events
+        await addPlayerXp(activeUser.id, xpReward, `פרס משימה: ${qData?.name || "משימה"}`);
+
         gameDataStore.upsertRow("player_quests", {
           id: `${activeUser.id}_${questId}`,
           user_id: activeUser.id,
