@@ -362,6 +362,7 @@ function MapEditor() {
             stores={stores}
             npcs={npcs}
             maps={maps as unknown as Array<{ id: string; name: string }>}
+            onPublish={publish}
           />
         ) : (
           <div className="chrome-panel grid flex-1 place-items-center text-sm">{t("common.loading")}</div>

@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { usePwaDevice, type DeviceType } from "@/hooks/use-pwa-device";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Download,
   Smartphone,
@@ -10,7 +12,7 @@ import {
   CheckCircle2,
   X,
   Sparkles,
-  ArrowLeft,
+  Compass,
 } from "lucide-react";
 
 export function PwaInstallButton({ className = "", compact = false }: { className?: string; compact?: boolean }) {
@@ -42,6 +44,11 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
   const [selectedDevice, setSelectedDevice] = useState<DeviceType>(detectedDevice);
   const [installing, setInstalling] = useState(false);
 
+  const { data: settings } = useQuery({
+    queryKey: ["game-settings"],
+    queryFn: async () => (await supabase.from("game_settings").select("*").eq("id", 1).maybeSingle()).data,
+  });
+
   const handleDirectInstall = async () => {
     setInstalling(true);
     const success = await promptInstall();
@@ -50,6 +57,13 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
       onClose();
     }
   };
+
+  const iosStep1 = settings?.pwa_ios_step1 || "לחצו על כפתור השיתוף / פעולות בסרגל של Safari (סמל ריבוע עם חץ עולה ⬆️ בתחתית המסך)";
+  const iosStep2 = settings?.pwa_ios_step2 || "גללו מעט ברשימת האפשרויות ולחצו על ״הוסף למסך הבית״ (Add to Home Screen ➕)";
+  const iosStep3 = settings?.pwa_ios_step3 || "לחצו על ״הוסף״ (Add) בפינה השמאלית העליונה — והאפליקציה מוכנה על מסך הבית שלכם!";
+
+  const androidStep1 = settings?.pwa_android_step1 || "פתחו את תפריט הדפדפן (לחצו על שלוש הנקודות ⋮ בפינת המסך ב-Chrome)";
+  const androidStep2 = settings?.pwa_android_step2 || "בחרו בתפריט ״התקן אפליקציה״ (Install app) או ״הוסף למסך הבית״";
 
   return (
     <div
@@ -78,11 +92,11 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
             <div>
               <div className="flex items-center gap-1.5 text-xs font-bold text-pink-200">
                 <Sparkles className="h-3.5 w-3.5" />
-                <span>PWA · התקנה ישירה ללא חנות</span>
+                <span>PWA · התקנה ישירה וקלה</span>
               </div>
-              <h2 className="text-xl font-black">הורדת האפליקציה</h2>
+              <h2 className="text-xl font-black">הורדת האפליקציה למכשיר</h2>
               <p className="text-xs text-white/80">
-                התקינו את COLT Market World ישירות למסך הבית לחוויה מהירה ומלאה
+                הוסיפו את COLT Market World למסך הבית שלכם לחוויה חלקה במסך מלא
               </p>
             </div>
           </div>
@@ -99,7 +113,7 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
               }`}
             >
               <Smartphone className="h-3.5 w-3.5" />
-              <span>iPhone / iOS</span>
+              <span>iPhone / iPad</span>
               {detectedDevice === "ios" && <span className="text-[10px] opacity-70">(זוהה)</span>}
             </button>
 
@@ -166,8 +180,11 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
           {/* iOS Safari instructions */}
           {selectedDevice === "ios" && (
             <div className="space-y-3">
-              <div className="text-xs font-bold text-muted-foreground">
-                מדריך התקנה מהיר ל-iPhone / iPad (דפדפן Safari):
+              <div className="rounded-2xl bg-pink-500/10 border border-pink-500/20 p-3 text-xs flex items-center gap-2">
+                <Compass className="h-4 w-4 text-pink-600 shrink-0" />
+                <span className="text-foreground">
+                  במכשירי <strong>iPhone / iPad</strong> מומלץ לפתוח בדפדפן <strong>Safari</strong> להתקנה מהירה:
+                </span>
               </div>
 
               <div className="space-y-2.5">
@@ -178,11 +195,13 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="text-xs space-y-1">
                     <div className="font-bold flex items-center gap-1.5">
-                      <span>לחצו על כפתור השיתוף (Share)</span>
-                      <Share2 className="h-3.5 w-3.5 text-primary inline" />
+                      <span>{iosStep1}</span>
                     </div>
-                    <div className="text-muted-foreground">
-                      הסמל נמצא בסרגל התחתון של Safari (ריבוע עם חץ הפונה למעלה).
+                    <div className="text-muted-foreground flex items-center gap-1.5 pt-0.5">
+                      <span className="inline-block rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] border border-border">
+                        <Share2 className="h-3 w-3 inline text-primary mr-1" />
+                        סמל השיתוף (ריבוע עם חץ עולה ⬆️ בסרגל התחתון)
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -194,11 +213,13 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="text-xs space-y-1">
                     <div className="font-bold flex items-center gap-1.5">
-                      <span>בחרו ״הוסף למסך הבית״</span>
-                      <PlusSquare className="h-3.5 w-3.5 text-purple-500 inline" />
+                      <span>{iosStep2}</span>
                     </div>
-                    <div className="text-muted-foreground">
-                      גללו מעט מטה ברשימת הפעולות עד שתראו <strong>״הוסף למסך הבית״ (Add to Home Screen)</strong>.
+                    <div className="text-muted-foreground flex items-center gap-1.5 pt-0.5">
+                      <span className="inline-block rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] border border-border">
+                        <PlusSquare className="h-3 w-3 inline text-purple-500 mr-1" />
+                        הוסף למסך הבית (Add to Home Screen)
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -209,9 +230,9 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
                     3
                   </div>
                   <div className="text-xs space-y-1">
-                    <div className="font-bold">לחצו ״הוסף״ (Add) בפינה העליונה</div>
+                    <div className="font-bold">{iosStep3}</div>
                     <div className="text-muted-foreground">
-                      האייקון של COLT יופיע במסך הבית שלכם כמו כל אפליקציה רגילה, ללא הורדה מ-App Store!
+                      אייקון האפליקציה יתווסף למסך הבית ויפעל כחלון אפליקציה מלא ללא צורך בהורדה מ-App Store.
                     </div>
                   </div>
                 </div>
@@ -234,11 +255,11 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="text-xs space-y-1">
                     <div className="font-bold flex items-center gap-1.5">
-                      <span>פתחו את תפריט הדפדפן</span>
+                      <span>{androidStep1}</span>
                       <MoreVertical className="h-3.5 w-3.5 text-primary inline" />
                     </div>
                     <div className="text-muted-foreground">
-                      לחצו על שלוש הנקודות בפינה העליונה (או התחתונה) של הדפדפן.
+                      לחצו על שלוש הנקודות בפינה העליונה של הדפדפן.
                     </div>
                   </div>
                 </div>
@@ -250,24 +271,11 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="text-xs space-y-1">
                     <div className="font-bold flex items-center gap-1.5">
-                      <span>בחרו ״התקן אפליקציה״ או ״הוסף למסך הבית״</span>
+                      <span>{androidStep2}</span>
                       <Download className="h-3.5 w-3.5 text-purple-500 inline" />
                     </div>
                     <div className="text-muted-foreground">
-                      חפשו בתפריט <strong>״התקן אפליקציה״ (Install app)</strong> או <strong>״הוסף למסך הבית״</strong>.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 3 */}
-                <div className="flex items-start gap-3 rounded-2xl border border-border bg-card/60 p-3 shadow-sm">
-                  <div className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-indigo-500 text-white text-xs font-black">
-                    3
-                  </div>
-                  <div className="text-xs space-y-1">
-                    <div className="font-bold">אשרו את ההתקנה</div>
-                    <div className="text-muted-foreground">
-                      לחצו על ״התקן״. האפליקציה תותקן במכשיר, תפתח במסך מלא ותשלח התראות.
+                      אשרו את ההתקנה והאייקון יתווסף למגירת האפליקציות ולמסך הבית.
                     </div>
                   </div>
                 </div>
@@ -279,27 +287,20 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
           {selectedDevice === "desktop" && (
             <div className="space-y-3">
               <div className="text-xs font-bold text-muted-foreground">
-                מדריך התקנה למחשב (Chrome, Edge, Brave):
+                התקנה במחשב (דפדפן Chrome / Edge / Brave):
               </div>
-
               <div className="space-y-2.5">
-                {/* Step 1 */}
                 <div className="flex items-start gap-3 rounded-2xl border border-border bg-card/60 p-3 shadow-sm">
                   <div className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-pink-500 text-white text-xs font-black">
                     1
                   </div>
                   <div className="text-xs space-y-1">
-                    <div className="font-bold flex items-center gap-1.5">
-                      <span>חפשו את כפתור ההתקנה בשורת הכתובת</span>
-                      <Download className="h-3.5 w-3.5 text-primary inline" />
-                    </div>
+                    <div className="font-bold">סמל ההתקנה בשורת הכתובת</div>
                     <div className="text-muted-foreground">
-                      בצד שורת ה-URL למעלה, מופיע סמל קטן של מחשב עם חץ למטה או סימן ⊕.
+                      חפשו את סמל ההורדה ⬇️ או המחשב בתוך שורת הכתובת בצד שמאל/ימין.
                     </div>
                   </div>
                 </div>
-
-                {/* Step 2 */}
                 <div className="flex items-start gap-3 rounded-2xl border border-border bg-card/60 p-3 shadow-sm">
                   <div className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-purple-500 text-white text-xs font-black">
                     2
@@ -307,20 +308,7 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
                   <div className="text-xs space-y-1">
                     <div className="font-bold">לחצו ״התקן״ (Install)</div>
                     <div className="text-muted-foreground">
-                      אשרו את ההתקנה בחלונית הקופצת.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 3 */}
-                <div className="flex items-start gap-3 rounded-2xl border border-border bg-card/60 p-3 shadow-sm">
-                  <div className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-indigo-500 text-white text-xs font-black">
-                    3
-                  </div>
-                  <div className="text-xs space-y-1">
-                    <div className="font-bold">פתיחה מיידית כתוכנה עצמאית</div>
-                    <div className="text-muted-foreground">
-                      COLT ייפתח כחלון עצמאי נקי, מהיר ונגיש ישירות משולחן העבודה ומשורת המשימות.
+                      הכנס ייפתח בחלון עצמאי, מהיר וללא שורות דפדפן.
                     </div>
                   </div>
                 </div>
@@ -334,7 +322,7 @@ export function PwaInstallModal({ onClose }: { onClose: () => void }) {
               <span>⚡</span> טעינה מהירה יותר
             </span>
             <span className="flex items-center gap-1.5">
-              <span>🎮</span> תצוגת מסך מלא ללא סרגלים
+              <span>🎮</span> מסך מלא ללא סרגלים
             </span>
             <span className="flex items-center gap-1.5">
               <span>🔒</span> מאובטח וקל לשימוש

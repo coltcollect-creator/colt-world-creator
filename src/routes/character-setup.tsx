@@ -29,28 +29,39 @@ type Character = {
 };
 
 const FALLBACK_ROLES: Role[] = [
-  { id: "d992291f-f6b8-415c-961f-66fa8fd6a11d", name: "קוסם", description: "שליט קסמי האספנות והקלפים", icon: "🧙‍♂️" },
-  { id: "9168f01b-5d72-4e1c-b47a-285bd7027baf", name: "אביר", description: "מגן היריד וצייד קלפי פרימיום", icon: "⚔️" },
+  { id: "role_adventurer", name: "הרפתקן", description: "חוקר עולמות וסייר", icon: "🧭" },
+  { id: "role_collector", name: "אספן", description: "מומחה לאיסוף ואוצרות", icon: "💎" },
+  { id: "role_trader", name: "סוחר", description: "מומחה למסחר והחלפות", icon: "⚖️" },
 ];
 
 const FALLBACK_CHARACTERS: Character[] = [
   {
-    id: "d14fed03-b2c5-4205-b2ff-a151345151ee",
-    name: "נינג'ה",
-    description: "חוקר וסוחר זריז ביריד COLT",
-    role_id: null,
-    image_url: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790241168098-3udpgm.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQxMTY4MDk4LTN1ZHBnbS5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQxMTY5LCJleHAiOjIxMDU2MDExNjl9.lv3RA5Sgn3_Wd9JxBq7HfswE5JoswDURrdT2k7hmpZ8",
-    sprite_right_url: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790241340487-ckaoy2.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQxMzQwNDg3LWNrYW95Mi5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQxMzQzLCJleHAiOjIxMDU2MDEzNDN9.Ov9g7wUpgkYhllmodNbfjJg2rDXio_Pziy-jYQoo4-Y",
+    id: "adventurer-orion",
+    name: "אוריון החוקר",
+    description: "חוקר הרפתקאות נועז שמכיר כל פינה בעולם.",
+    role_id: "role_adventurer",
+    image_url: "/storage_cache/characters/image_url_adventurer-orion_muigjx1q.png",
+    sprite_right_url: "/storage_cache/characters/sprite_right_url_adventurer-orion_muigjx5l.png",
     is_free: true,
     credit_price: 0,
   },
   {
-    id: "d7fc1b37-dae3-4bd0-bab1-3c21a4a51571",
-    name: "מאיה",
-    description: "מומחית להערכת שווי קלפים ומציאת דילים",
-    role_id: "d992291f-f6b8-415c-961f-66fa8fd6a11d",
-    image_url: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790245088277-toz4do.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQ1MDg4Mjc3LXRvejRkby5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQ1MDkwLCJleHAiOjIxMDU2MDUwOTB9.xXb2xwPjREqW3tFVA5p4wnsR1S7FSPaoRxo66mPlZZA",
-    sprite_right_url: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790247232415-8xr2rk.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQ3MjMyNDE1LTh4cjJyay5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQ3MjM0LCJleHAiOjIxMDU2MDcyMzR9.z_8m50YU1-JJSrdthdAoDJ7Bdlz6LBidY5VzenaFFik",
+    id: "collector-carl",
+    name: "קארל האספן",
+    description: "אספן אגדי שסוחר בפריטים נדירים ביותר.",
+    role_id: "role_collector",
+    image_url: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
+    sprite_right_url: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
+    is_free: true,
+    credit_price: 0,
+  },
+  {
+    id: "trader-maya",
+    name: "מאיה הסוחרת",
+    description: "מומחית להערכת שווי וסחר חופשי ביריד.",
+    role_id: "role_trader",
+    image_url: "/storage_cache/characters/image_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxm0.png",
+    sprite_right_url: "/storage_cache/characters/sprite_right_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxf0.png",
     is_free: true,
     credit_price: 0,
   },
@@ -59,8 +70,8 @@ const FALLBACK_CHARACTERS: Character[] = [
     name: "קוסם",
     description: "חוקר COLT בעל יכולות קסם מותאם לכל שכבות הקוסמטיקה",
     role_id: null,
-    image_url: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790243842980-2zbn8o.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQzODQyOTgwLTJ6Ym44by5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQzODQ1LCJleHAiOjIxMDU2MDM4NDV9.cNu1m6pbXc35wW_Z-mnDWdZTUPL4xgwpj8MRoCesetw",
-    sprite_right_url: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790244597162-oi7k6a.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQ0NTk3MTYyLW9pN2s2YS5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQ0NTk5LCJleHAiOjIxMDU2MDQ1OTl9.68GEx-zkFErcHjHYAKwlSsn9PnC5B7q3PjJArAeWMp0",
+    image_url: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
+    sprite_right_url: "/storage_cache/characters/sprite_right_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwm9.png",
     is_free: true,
     credit_price: 0,
   },
@@ -98,13 +109,19 @@ function CharacterSetup() {
   const [characterId, setCharacterId] = useState<string | null>(null);
   const [username, setUsername] = useState(profile?.username || user?.user_metadata?.username || "Colt");
 
-  // Auto-select first character if none selected
+  // Auto-select character based on existing profile or first available
   useEffect(() => {
-    if (!characterId && characters.length > 0) {
-      setCharacterId(characters[0].id);
-      setRoleId(characters[0].role_id);
+    if (!characterId) {
+      if (profile?.character_id && characters.some((c) => c.id === profile.character_id)) {
+        setCharacterId(profile.character_id);
+        const match = characters.find((c) => c.id === profile.character_id);
+        if (match?.role_id) setRoleId(match.role_id);
+      } else if (characters.length > 0) {
+        setCharacterId(characters[0].id);
+        setRoleId(characters[0].role_id);
+      }
     }
-  }, [characters, characterId]);
+  }, [characters, characterId, profile?.character_id]);
 
   const filteredCharacters = useMemo(() => {
     if (!roleId) return characters;
@@ -116,7 +133,7 @@ function CharacterSetup() {
   const save = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error("No user");
-      const chosenCharId = characterId || characters[0]?.id || "collector-carl";
+      const chosenCharId = characterId || characters[0]?.id || "adventurer-orion";
       const finalUsername = username.trim() || "Colt";
 
       const { error } = await supabase.from("profiles").update({

@@ -35,26 +35,71 @@ export function GlobalChat() {
       });
       setMessages(uniqueList);
     })();
-    const channel = supabase.channel("global-chat").on("postgres_changes",
-      { event: "INSERT", schema: "public", table: "chat_messages", filter: "channel=eq.global" },
-      async (payload) => {
-        const m = payload.new as Msg;
-        const { data: ps } = await supabase.rpc("get_public_profiles", { _ids: [m.user_id] });
-        const p = ps?.[0];
-        setMessages((prev) => {
-        const exists = prev.some((item) => item.id === m.id);
-        if (exists) {
-          return prev.map((item) =>
-            item.id === m.id
-              ? { ...item, username: p?.username ?? item.username, level: p?.level ?? item.level }
-              : item
-          );
+    const channel = supabase.channel("global-chat")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages", filter: "channel=eq.global" },
+        async (payload) => {
+          const m = payload.new as Msg;
+          if ((m as any)?.deleted) return;
+          const { data: ps } = await supabase.rpc("get_public_profiles", { _ids: [m.user_id] });
+          const p = ps?.[0];
+          setMessages((prev) => {
+            const exists = prev.some((item) => item.id === m.id);
+            if (exists) {
+              return prev.map((item) =>
+                item.id === m.id
+                  ? { ...item, username: p?.username ?? item.username, level: p?.level ?? item.level }
+                  : item
+              );
+            }
+            return [...prev.slice(-100), { ...m, username: p?.username, level: p?.level }];
+          });
         }
-        return [...prev.slice(-100), { ...m, username: p?.username, level: p?.level }];
-      });
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "chat_messages", filter: "channel=eq.global" },
+        (payload) => {
+          const m = payload.new as any;
+          if (m?.deleted) {
+            setMessages((prev) => prev.filter((item) => item.id !== m.id));
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "chat_messages" },
+        (payload) => {
+          const oldId = payload.old?.id;
+          if (oldId) {
+            setMessages((prev) => prev.filter((item) => item.id !== oldId));
+          }
+        }
+      )
+      .subscribe();
+
+    const handleCustomTableChange = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.table === "chat_messages") {
+        if (detail.eventType === "DELETE" && detail.old?.id) {
+          setMessages((prev) => prev.filter((item) => item.id !== detail.old.id));
+        } else if (detail.eventType === "UPDATE" && detail.new?.deleted) {
+          setMessages((prev) => prev.filter((item) => item.id !== detail.new.id));
+        }
       }
-    ).subscribe();
-    return () => { cancelled = true; supabase.removeChannel(channel); };
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("colt_table_change", handleCustomTableChange);
+    }
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("colt_table_change", handleCustomTableChange);
+      }
+    };
   }, []);
 
   const send = async (e: React.FormEvent) => {

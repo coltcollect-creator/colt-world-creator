@@ -58,7 +58,30 @@ function Customize() {
       ((await supabase.from("cosmetics").select("*").eq("active", true).order("layer_order")).data ?? []) as unknown as CosmeticRow[],
   });
 
-  const characterId = (profile as unknown as { character_id?: string | null } | null)?.character_id ?? null;
+  const characterId = (profile as unknown as { character_id?: string | null } | null)?.character_id ?? "adventurer-orion";
+  
+  const { data: allCharacters = [] } = useQuery({
+    queryKey: ["all-available-characters"],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("characters")
+        .select("id, name, description, image_url, sprite_right_url, sprite_left_url, model_3d_url, role_id")
+        .eq("active", true)
+        .order("display_order");
+      return (data ?? []) as Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        image_url: string | null;
+        sprite_right_url: string | null;
+        sprite_left_url: string | null;
+        model_3d_url: string | null;
+        role_id: string | null;
+      }>;
+    },
+  });
+
   const { data: character } = useQuery({
     queryKey: ["my-character", characterId],
     enabled: !!characterId,
@@ -67,6 +90,22 @@ function Customize() {
       (await supabase.from("characters").select("id, name, image_url, sprite_right_url, sprite_left_url, model_3d_url").eq("id", characterId!).maybeSingle()).data as
         | { id: string; name: string; image_url: string | null; sprite_right_url: string | null; sprite_left_url: string | null; model_3d_url: string | null }
         | null,
+  });
+
+  const setCharacterMutation = useMutation({
+    mutationFn: async (chosenChar: { id: string; role_id: string | null; name: string }) => {
+      if (!user) return;
+      const { error } = await supabase.from("profiles").update({
+        character_id: chosenChar.id,
+        ...(chosenChar.role_id ? { role_id: chosenChar.role_id } : {}),
+      }).eq("id", user.id);
+      if (error) throw error;
+      await refreshProfile();
+    },
+    onSuccess: (_, chosenChar) => {
+      toast.success(`הדמות שונתה בהצלחה ל-${chosenChar.name}! ✨`);
+    },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const ownedIds = useMemo(() => new Set(owned.map((o) => o.cosmetic_id)), [owned]);
@@ -236,8 +275,81 @@ function Customize() {
           <div className="chrome-panel p-4">
             <h1 className="text-xl font-bold">התאמה אישית לדמות</h1>
             <p className="text-xs text-muted-foreground">
-              כאן מופיעים רק פריטים שהשגתם — מהחנויות, משימות, גלגל המזל או מתנות. כל בחירה מתעדכנת מיד בתצוגה המקדימה.
+              בחרו את הדמות הראשית שלכם מתוך הדמויות הקיימות, והלבישו עליה פריטים שהשגתם ביריד. כל שינוי נשמר ומתעדכן מיד במשחק.
             </p>
+          </div>
+
+          {/* Main Character Selection */}
+          <div className="chrome-panel p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-base text-pink-600">🎭 בחירת דמות ראשית</h3>
+                <p className="text-xs text-muted-foreground">בחרו את הדמות שתייצג אתכם בעולם של COLT</p>
+              </div>
+              <span className="rounded-full bg-pink-100 text-pink-700 px-3 py-1 text-xs font-bold">
+                {allCharacters.find((c) => c.id === characterId)?.name ?? "דמות נבחרת"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {allCharacters.map((c) => {
+                const isCurrent = c.id === characterId;
+                const portrait = c.image_url || c.sprite_right_url;
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => {
+                      if (!isCurrent) setCharacterMutation.mutate({ id: c.id, role_id: c.role_id, name: c.name });
+                    }}
+                    className={`chrome-panel relative p-3 text-center cursor-pointer transition-all duration-200 hover:scale-[1.02] ${
+                      isCurrent
+                        ? "ring-4 ring-pink-500 bg-pink-50/50 shadow-lg border-pink-400"
+                        : "opacity-85 hover:opacity-100 hover:border-pink-300"
+                    }`}
+                  >
+                    {isCurrent && (
+                      <div className="absolute top-2 right-2 rounded-full bg-pink-500 text-white text-[10px] font-black px-2 py-0.5 shadow">
+                        ✅ נבחרה
+                      </div>
+                    )}
+                    <div className="relative mx-auto mb-2 h-24 w-24 flex items-center justify-center rounded-2xl bg-gradient-to-b from-white to-pink-50/80 p-2 border border-pink-100 shadow-inner">
+                      {portrait ? (
+                        <img
+                          src={portrait}
+                          alt={c.name}
+                          className="max-h-full max-w-full object-contain filter drop-shadow-md"
+                        />
+                      ) : (
+                        <span className="text-3xl">👤</span>
+                      )}
+                    </div>
+                    <div className="font-black text-sm text-slate-800">{c.name}</div>
+                    {c.description && (
+                      <div className="mt-1 text-[11px] text-muted-foreground line-clamp-2">
+                        {c.description}
+                      </div>
+                    )}
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        disabled={isCurrent || setCharacterMutation.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCharacterMutation.mutate({ id: c.id, role_id: c.role_id, name: c.name });
+                        }}
+                        className={`w-full py-1.5 px-3 rounded-xl font-bold text-xs shadow transition-all ${
+                          isCurrent
+                            ? "bg-pink-500 text-white cursor-default shadow-pink-200"
+                            : "btn-plastic"
+                        }`}
+                      >
+                        {isCurrent ? "✓ דמות פעילה" : "בחר דמות זו"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {layers.length === 0 && (

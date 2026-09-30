@@ -182,8 +182,7 @@ export function Game3DViewport({
 
   // ---- base character sprites
   useEffect(() => {
-    const cid = (profile as unknown as { character_id?: string | null } | null)?.character_id;
-    if (!cid) { setCharacterSprites(null); return; }
+    const cid = (profile as unknown as { character_id?: string | null } | null)?.character_id || "d14fed03-b2c5-4205-b2ff-a151345151ee";
     let cancelled = false;
     (async () => {
       const { data } = await supabase.from("characters")

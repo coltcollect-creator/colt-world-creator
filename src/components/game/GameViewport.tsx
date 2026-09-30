@@ -7,26 +7,50 @@ import { trackQuestAction } from "@/lib/quest-events";
 import { db } from "@/lib/firebase";
 import { collection, doc, setDoc, deleteDoc, query, where, onSnapshot } from "firebase/firestore";
 
-// Pre-cached starter characters
+// Pre-cached starter characters with full asset URLs
 const STARTER_CHARACTER_SPRITES: Record<string, { right: string; left: string | null; jump: string | null; idle: string }> = {
-  "d14fed03-b2c5-4205-b2ff-a151345151ee": {
-    right: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790241340487-ckaoy2.png",
-    left: null,
-    jump: null,
-    idle: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790241168098-3udpgm.png",
-  },
-  "d7fc1b37-dae3-4bd0-bab1-3c21a4a51571": {
-    right: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790247232415-8xr2rk.png",
-    left: null,
-    jump: null,
-    idle: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790245088277-toz4do.png",
-  },
+  "adventurer-orion": {
+    name: "אוריון החוקר",
+    right: "/storage_cache/characters/sprite_right_url_adventurer-orion_muigjx5l.png",
+    left: "/storage_cache/characters/sprite_left_url_adventurer-orion_muigjx3c.png",
+    jump: "/storage_cache/characters/sprite_right_url_adventurer-orion_muigjx5l.png",
+    idle: "/storage_cache/characters/image_url_adventurer-orion_muigjx1q.png",
+  } as any,
+  "collector-carl": {
+    name: "קארל האספן",
+    right: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
+    left: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
+    jump: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
+    idle: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
+  } as any,
+  "trader-maya": {
+    name: "מאיה הסוחרת",
+    right: "/storage_cache/characters/sprite_right_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxf0.png",
+    left: "/storage_cache/characters/sprite_left_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxje.png",
+    jump: "/storage_cache/characters/sprite_jump_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxh9.jpg",
+    idle: "/storage_cache/characters/image_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxm0.png",
+  } as any,
   "44ca85cf-9e82-47e5-9ce5-06abde1ec0d1": {
-    right: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790244597162-oi7k6a.png",
-    left: null,
-    jump: null,
-    idle: "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790243842980-2zbn8o.png",
-  },
+    name: "קוסם",
+    right: "/storage_cache/characters/sprite_right_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwm9.png",
+    left: "/storage_cache/characters/sprite_left_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwkm.png",
+    jump: "/storage_cache/characters/sprite_jump_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwbi.png",
+    idle: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
+  } as any,
+  "d14fed03-b2c5-4205-b2ff-a151345151ee": {
+    name: "נינג'ה",
+    right: "/storage_cache/characters/sprite_right_url_d14fed03-b2c5-4205-b2ff-a151345151ee_muigjxbf.png",
+    left: "/storage_cache/characters/sprite_left_url_adventurer-orion_muigjx3c.png",
+    jump: "/storage_cache/characters/sprite_right_url_adventurer-orion_muigjx5l.png",
+    idle: "/storage_cache/characters/image_url_adventurer-orion_muigjx1q.png",
+  } as any,
+  "d7fc1b37-dae3-4bd0-bab1-3c21a4a51571": {
+    name: "מאיה",
+    right: "/storage_cache/characters/sprite_right_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxf0.png",
+    left: "/storage_cache/characters/sprite_left_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxje.png",
+    jump: "/storage_cache/characters/sprite_jump_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxh9.jpg",
+    idle: "/storage_cache/characters/image_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxm0.png",
+  } as any,
 };
 
 export type MapObject = {
@@ -152,8 +176,8 @@ export function GameViewport({
   othersRef.current = others;
   const [equipped, setEquipped] = useState<EquippedCosmetic[]>([]);
 
-  const initialCid = (profile as unknown as { character_id?: string | null } | null)?.character_id || "d14fed03-b2c5-4205-b2ff-a151345151ee";
-  const initialStarter = STARTER_CHARACTER_SPRITES[initialCid] || STARTER_CHARACTER_SPRITES["d14fed03-b2c5-4205-b2ff-a151345151ee"];
+  const initialCid = (profile as unknown as { character_id?: string | null } | null)?.character_id || "adventurer-orion";
+  const initialStarter = STARTER_CHARACTER_SPRITES[initialCid] || STARTER_CHARACTER_SPRITES["adventurer-orion"];
   const [characterSprites, setCharacterSprites] = useState<{ right: string | null; left: string | null; jump: string | null; idle: string | null }>(() => ({
     right: initialStarter?.right ?? null,
     left: initialStarter?.left ?? null,
@@ -641,7 +665,7 @@ export function GameViewport({
 
   // Load selected base character sprites from profile.character_id
   useEffect(() => {
-    const cid = (profile as unknown as { character_id?: string | null } | null)?.character_id || "d14fed03-b2c5-4205-b2ff-a151345151ee";
+    const cid = (profile as unknown as { character_id?: string | null } | null)?.character_id || "adventurer-orion";
     const cached = STARTER_CHARACTER_SPRITES[cid];
     if (cached) {
       setCharacterSprites({
@@ -967,7 +991,13 @@ function drawAvatar(
 
   for (const c of ordered) if (cosmeticRect(c, box).behind) drawPiece(c);
 
-  const base = spriteUrl ? getImg(spriteUrl) : null;
+  let base = spriteUrl ? getImg(spriteUrl) : null;
+  if (!base || !base.complete || !base.naturalWidth) {
+    const starterFallback = STARTER_CHARACTER_SPRITES["d14fed03-b2c5-4205-b2ff-a151345151ee"];
+    const fallbackUrl = facing === "left" && starterFallback.left ? starterFallback.left : starterFallback.right;
+    base = getImg(fallbackUrl);
+  }
+
   if (base && base.complete && base.naturalWidth) {
     if (flip) {
       ctx.save();
@@ -978,8 +1008,6 @@ function drawAvatar(
     } else {
       ctx.drawImage(base, x, y, PLAYER_W, PLAYER_H);
     }
-  } else {
-    drawCharacter(ctx, x, y, PLAYER_W, PLAYER_H, fallbackColor, facing, jumping);
   }
 
   for (const c of ordered) if (!cosmeticRect(c, box).behind) drawPiece(c);

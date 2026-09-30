@@ -2133,25 +2133,18 @@ Do not reduce the project to a simple landing page or static visual prototype.
 
 When a feature is too complex to fully finish in the first generation, create its complete database model, routes, reusable components, service layer, and functional initial version rather than replacing it with a decorative placeholder.
 
-This project was built with [Lovable](https://lovable.dev).
+This project is developed with Google AI Studio, GitHub, and Firebase Firestore.
 
-**Live app**: https://colt-world-creator.lovable.app
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/2b94da4e-3d77-49bf-a5a7-0c5c3e0e7d59).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+## Stack & Services
+- **Platform**: Google AI Studio
+- **Source Control**: GitHub (`coltcollect-creator/colt-world-creator`)
+- **Database & Auth**: Google Firebase (Firestore & Firebase Authentication)
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
+git clone https://github.com/coltcollect-creator/colt-world-creator.git
+cd colt-world-creator
 npm i
 npm run dev
 ```

@@ -7,6 +7,7 @@ import { useI18n, LanguageSwitcher } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { useServerFn } from "@tanstack/react-start";
 import { adminCreateUser, adminSetUserRole, adminDeleteUser } from "@/lib/user-admin.functions";
+import { gameDataStore } from "@/lib/gameDataStore";
 import { sendSystemMessage } from "@/lib/system-messages.functions";
 import { ImageUpload } from "@/components/owner/ImageUpload";
 import { CharacterFitPreview } from "@/components/game/CharacterFitPreview";
@@ -1042,10 +1043,27 @@ function PlayersPanel() {
     if (deleteTarget.id === currentUser?.id) { toast.error("אי אפשר למחוק את עצמך"); return; }
     setDeleting(true);
     try {
-      await deleteFn({ data: { user_id: deleteTarget.id } });
-      toast.success("המשתמש נמחק בהצלחה");
+      const uid = deleteTarget.id;
+      // 1. Purge from local persistent game data store immediately
+      gameDataStore.deleteRow("profiles", uid);
+      gameDataStore.deleteRow("active_players", uid);
+      gameDataStore.deleteRow("admins", uid);
+      gameDataStore.deleteRow("user_roles", uid);
+
+      // 2. Delete user from all database tables and Firestore collections directly
+      await supabase.from("user_roles").delete().eq("user_id", uid);
+      await supabase.from("admins").delete().eq("user_id", uid);
+      await supabase.from("active_players").delete().eq("user_id", uid);
+      await supabase.from("profiles").delete().eq("id", uid);
+      
+      // 3. Call server-side auth deletion
+      await deleteFn({ data: { user_id: uid } }).catch(() => {});
+
+      toast.success("המשתמש נמחק בהצלחה לצמיתות");
       setDeleteTarget(null);
       refetch();
+      qc.invalidateQueries({ queryKey: ["own-players"] });
+      qc.invalidateQueries({ queryKey: ["admin-users-list"] });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "שגיאה במחיקה");
     } finally {
@@ -1301,39 +1319,177 @@ function PlayersPanel() {
 }
 
 function Moderation() {
+  const qc = useQueryClient();
+  const [filterDeleted, setFilterDeleted] = useState<"all" | "active" | "deleted">("all");
+  const [busyId, setBusyId] = useState<string | null>(null);
+
   const { data = [], refetch } = useQuery({
     queryKey: ["own-chat"],
-    queryFn: async () => (await supabase.from("chat_messages").select("*").order("created_at", { ascending: false }).limit(100)).data ?? [],
+    refetchInterval: 5000,
+    queryFn: async () => (await supabase.from("chat_messages").select("*").order("created_at", { ascending: false }).limit(200)).data ?? [],
   });
   const { sorted, SortHeader } = useSortableData(data);
-  const del = async (id: string) => {
-    const { error } = await supabase.from("chat_messages").update({ deleted: true }).eq("id", id);
-    if (error) toast.error(error.message); else refetch();
+
+  const del = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!confirm("האם למחוק לצמיתות הודעה זו ממסד הנתונים?")) return;
+    setBusyId(id);
+    try {
+      const { error } = await supabase.from("chat_messages").delete().eq("id", id);
+      if (error) {
+        toast.error("שגיאה במחיקת הודעה: " + error.message);
+      } else {
+        toast.success("ההודעה נמחקה לצמיתות");
+        refetch();
+        qc.invalidateQueries({ queryKey: ["own-chat"] });
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "שגיאה במחיקה");
+    } finally {
+      setBusyId(null);
+    }
   };
+
+  const toggleHide = async (id: string, currentlyDeleted: boolean, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setBusyId(id);
+    try {
+      const { error } = await supabase.from("chat_messages").update({ deleted: !currentlyDeleted }).eq("id", id);
+      if (error) {
+        toast.error("שגיאה בעדכון הודעה: " + error.message);
+      } else {
+        toast.success(currentlyDeleted ? "ההודעה שוחזרה לצ'אט" : "ההודעה הוסתרה מהצ'אט");
+        refetch();
+        qc.invalidateQueries({ queryKey: ["own-chat"] });
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "שגיאה בעדכון");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const clearAll = async () => {
+    if (!confirm("האם למחוק את כל ההודעות בצ'אט לצמיתות?")) return;
+    try {
+      for (const m of data) {
+        await supabase.from("chat_messages").delete().eq("id", m.id);
+      }
+      toast.success("כל ההודעות נמחקו בהצלחה");
+      refetch();
+      qc.invalidateQueries({ queryKey: ["own-chat"] });
+    } catch (err: any) {
+      toast.error(err?.message || "שגיאה בניקוי צ'אט");
+    }
+  };
+
+  const filtered = sorted.filter((m) => {
+    if (filterDeleted === "active") return !m.deleted;
+    if (filterDeleted === "deleted") return !!m.deleted;
+    return true;
+  });
+
   return (
-    <div className="chrome-panel space-y-3 p-4">
-      <h2 className="text-lg font-bold">Chat moderation ({sorted.length})</h2>
+    <div className="chrome-panel space-y-4 p-4" dir="rtl">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+        <div>
+          <h2 className="text-lg font-bold">🛡️ ניטור צ'אט חי וניהול הודעות ({filtered.length})</h2>
+          <p className="text-xs text-muted-foreground">
+            צפייה ומחיקת הודעות בזמן אמת מכל השחקנים במתחם היריד
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg bg-muted p-0.5 text-xs">
+            <button
+              onClick={() => setFilterDeleted("all")}
+              className={`rounded-md px-2.5 py-1 ${filterDeleted === "all" ? "bg-card font-bold shadow" : "text-muted-foreground"}`}
+            >
+              הכל ({data.length})
+            </button>
+            <button
+              onClick={() => setFilterDeleted("active")}
+              className={`rounded-md px-2.5 py-1 ${filterDeleted === "active" ? "bg-card font-bold shadow" : "text-muted-foreground"}`}
+            >
+              פעילות ({data.filter((d) => !d.deleted).length})
+            </button>
+            <button
+              onClick={() => setFilterDeleted("deleted")}
+              className={`rounded-md px-2.5 py-1 ${filterDeleted === "deleted" ? "bg-card font-bold shadow" : "text-muted-foreground"}`}
+            >
+              מוסתרות ({data.filter((d) => d.deleted).length})
+            </button>
+          </div>
+          <button
+            onClick={clearAll}
+            disabled={!data.length}
+            className="rounded-xl bg-destructive/15 px-3 py-1.5 text-xs font-bold text-destructive hover:bg-destructive/25 disabled:opacity-40"
+          >
+            🗑️ נקה הכל
+          </button>
+        </div>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="text-start text-muted-foreground">
+          <thead className="text-start text-muted-foreground border-b border-border">
             <tr>
-              <SortHeader label="Time" sortKey="created_at" />
-              <SortHeader label="User" sortKey="user_id" />
-              <SortHeader label="Message" sortKey="message" />
-              <SortHeader label="Deleted" sortKey="deleted" />
-              <th className="p-1 text-start"></th>
+              <SortHeader label="זמן" sortKey="created_at" />
+              <SortHeader label="מזהה משתמש" sortKey="user_id" />
+              <SortHeader label="תוכן ההודעה" sortKey="message" />
+              <SortHeader label="סטטוס" sortKey="deleted" />
+              <th className="p-2 text-start">פעולות ניהול</th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map((m) => (
-              <tr key={m.id} className="border-t border-border">
-                <td className="p-1">{new Date(m.created_at).toLocaleTimeString()}</td>
-                <td className="p-1 font-mono">{m.user_id.slice(0, 8)}</td>
-                <td className="p-1">{m.message}</td>
-                <td className="p-1">{m.deleted ? "✓" : "—"}</td>
-                <td className="p-1">{!m.deleted && <button onClick={() => del(m.id)} className="rounded bg-destructive/20 px-2 py-0.5 text-destructive">Delete</button>}</td>
+            {filtered.map((m) => (
+              <tr key={m.id} className="border-b border-border/50 hover:bg-muted/40 transition-colors">
+                <td className="p-2 whitespace-nowrap text-muted-foreground">
+                  {new Date(m.created_at).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </td>
+                <td className="p-2 font-mono text-[11px] text-foreground/80">{m.user_id.slice(0, 10)}…</td>
+                <td className="p-2 max-w-xs font-medium text-foreground">{m.message}</td>
+                <td className="p-2 whitespace-nowrap">
+                  {m.deleted ? (
+                    <span className="rounded-full bg-destructive/20 px-2 py-0.5 text-[10px] font-bold text-destructive">
+                      מוסתר
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                      מוצג
+                    </span>
+                  )}
+                </td>
+                <td className="p-2 whitespace-nowrap">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={busyId === m.id}
+                      onClick={(e) => del(m.id, e)}
+                      className="rounded-lg bg-destructive/15 px-2.5 py-1 font-bold text-destructive hover:bg-destructive/25 transition-colors disabled:opacity-50"
+                      title="מחק לצמיתות ממסד הנתונים"
+                    >
+                      {busyId === m.id ? "מוחק…" : "🗑️ מחק לצמיתות"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === m.id}
+                      onClick={(e) => toggleHide(m.id, !!m.deleted, e)}
+                      className="rounded-lg bg-muted px-2.5 py-1 font-medium text-muted-foreground hover:bg-muted/80 transition-colors"
+                      title={m.deleted ? "שחזר לצ'אט" : "הסתר מהצ'אט"}
+                    >
+                      {m.deleted ? "👁️ הצג" : "🙈 הסתר"}
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
+            {!filtered.length && (
+              <tr>
+                <td colSpan={5} className="p-6 text-center text-muted-foreground text-xs">
+                  אין הודעות להצגה בקטגוריה זו.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -1388,16 +1544,71 @@ function SettingsPanel() {
           <textarea value={String(cur.vendor_terms_text ?? "")} onChange={(e) => setForm((f) => ({ ...f, vendor_terms_text: e.target.value }))} rows={5} className="w-full rounded-xl border-2 border-border bg-input px-3 py-1" />
         </label>
       </div>
-      <div className="flex flex-wrap gap-2">
-        {(["maintenance_mode", "registration_enabled", "credit_purchasing_enabled", "email_verification_required"] as const).map((k) => (
-          <label key={k} className="flex items-center gap-1 rounded bg-muted px-2 py-1 text-xs">
+      <div className="mt-3 space-y-2 rounded-xl border-2 border-dashed border-primary/40 p-3">
+        <div className="text-xs font-bold text-primary">📱 הנחיות הורדת אפליקציה (PWA) למכשירי iPhone ואנדרואיד</div>
+        <p className="text-[11px] text-muted-foreground">
+          באפשרותכם לעדכן את ההסברים והשלבים שמופיעים למשתמשים כאשר הם לוחצים על ״הורדת האפליקציה״.
+        </p>
+        
+        <div className="space-y-1.5 pt-1">
+          <span className="text-xs font-bold text-foreground">🍏 הנחיות למכשירי iPhone / Safari:</span>
+          <label className="block text-xs">
+            <span className="mb-0.5 block text-muted-foreground">שלב 1 (לחיצה על שיתוף / תפריט)</span>
+            <input
+              value={String(cur.pwa_ios_step1 ?? "לחצו על כפתור השיתוף / תפריט בסרגל התחתון של Safari (ריבוע עם חץ עולה)")}
+              onChange={(e) => setForm((f) => ({ ...f, pwa_ios_step1: e.target.value }))}
+              className="w-full rounded-xl border-2 border-border bg-input px-3 py-1 text-xs"
+            />
+          </label>
+          <label className="block text-xs">
+            <span className="mb-0.5 block text-muted-foreground">שלב 2 (בחירה בהוסף למסך הבית)</span>
+            <input
+              value={String(cur.pwa_ios_step2 ?? "גללו מעט מטה ברשימת הפעולות ובחרו ״הוסף למסך הבית״ (Add to Home Screen)")}
+              onChange={(e) => setForm((f) => ({ ...f, pwa_ios_step2: e.target.value }))}
+              className="w-full rounded-xl border-2 border-border bg-input px-3 py-1 text-xs"
+            />
+          </label>
+          <label className="block text-xs">
+            <span className="mb-0.5 block text-muted-foreground">שלב 3 (אישור והוספה)</span>
+            <input
+              value={String(cur.pwa_ios_step3 ?? "לחצו ״הוסף״ (Add) בפינה העליונה — האייקון של COLT יופיע במסך הבית שלכם!")}
+              onChange={(e) => setForm((f) => ({ ...f, pwa_ios_step3: e.target.value }))}
+              className="w-full rounded-xl border-2 border-border bg-input px-3 py-1 text-xs"
+            />
+          </label>
+        </div>
+
+        <div className="space-y-1.5 pt-2 border-t border-border/50">
+          <span className="text-xs font-bold text-foreground">🤖 הנחיות למכשירי Android / Chrome:</span>
+          <label className="block text-xs">
+            <span className="mb-0.5 block text-muted-foreground">שלב 1 (תפריט הדפדפן)</span>
+            <input
+              value={String(cur.pwa_android_step1 ?? "לחצו על שלוש הנקודות (⋮) בפינת הדפדפן")}
+              onChange={(e) => setForm((f) => ({ ...f, pwa_android_step1: e.target.value }))}
+              className="w-full rounded-xl border-2 border-border bg-input px-3 py-1 text-xs"
+            />
+          </label>
+          <label className="block text-xs">
+            <span className="mb-0.5 block text-muted-foreground">שלב 2 (התקנה)</span>
+            <input
+              value={String(cur.pwa_android_step2 ?? "בחרו ״התקן אפליקציה״ (Install app) או ״הוסף למסך הבית״")}
+              onChange={(e) => setForm((f) => ({ ...f, pwa_android_step2: e.target.value }))}
+              className="w-full rounded-xl border-2 border-border bg-input px-3 py-1 text-xs"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 pt-2">
+        {(["maintenance_mode", "registration_enabled", "credit_purchasing_enabled"] as const).map((k) => (
+          <label key={k} className="flex items-center gap-1 rounded bg-muted px-2 py-1 text-xs font-bold">
             <input type="checkbox" checked={!!cur[k]} onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.checked }))} />
-            {k === "email_verification_required" ? "🔐 דרוש אימות מייל בהרשמה" : k}
+            {k === "maintenance_mode" ? "🛠️ מצב תחזוקה" : k === "registration_enabled" ? "👥 הרשמה פתוחה" : "💎 רכישת קרדיטים פעילה"}
           </label>
         ))}
       </div>
 
-      <button onClick={save} className="btn-plastic">Save settings</button>
+      <button onClick={save} className="btn-plastic mt-2">💾 שמירת כל ההגדרות</button>
     </div>
   );
 }
@@ -1854,6 +2065,70 @@ function BroadcastPanel() {
         <button className="btn-plastic" disabled={busy} onClick={submit}>
           {busy ? "שולח..." : "שליחת הודעה"}
         </button>
+
+        {/* Sent system notifications list with delete option */}
+        <SentBroadcastsList />
+      </div>
+    </div>
+  );
+}
+
+function SentBroadcastsList() {
+  const qc = useQueryClient();
+  const { data: sentList = [], refetch } = useQuery({
+    queryKey: ["sent-system-notifications"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("player_notifications")
+        .select("id, title, body, created_at, user_id, read")
+        .eq("kind", "system")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      return data ?? [];
+    },
+  });
+
+  const deleteNotif = async (id: string) => {
+    if (!confirm("האם למחוק הודעת מערכת זו?")) return;
+    try {
+      const { error } = await supabase.from("player_notifications").delete().eq("id", id);
+      if (error) {
+        toast.error(error.message);
+      } else {
+        toast.success("הודעת המערכת נמחקה בהצלחה");
+        refetch();
+        qc.invalidateQueries({ queryKey: ["sent-system-notifications"] });
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "שגיאה במחיקה");
+    }
+  };
+
+  if (!sentList.length) return null;
+
+  return (
+    <div className="mt-6 border-t border-border pt-4">
+      <h3 className="font-bold text-sm mb-2">📜 הודעות מערכת שנשלחו לאחרונה ({sentList.length})</h3>
+      <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+        {sentList.map((n) => (
+          <div key={n.id} className="flex items-start justify-between gap-2 rounded-xl bg-muted/60 p-2.5 text-xs border border-border/50">
+            <div className="min-w-0 flex-1">
+              <div className="font-bold text-foreground truncate">{n.title}</div>
+              <div className="text-muted-foreground line-clamp-2">{n.body}</div>
+              <div className="mt-1 text-[10px] text-muted-foreground/70">
+                {new Date(n.created_at).toLocaleString("he-IL")} · נשלח למשתמש: {n.user_id?.slice(0, 8)}…
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => deleteNotif(n.id)}
+              className="rounded-lg bg-destructive/15 p-1.5 text-destructive hover:bg-destructive/25 transition-colors"
+              title="מחק הודעת מערכת זו"
+            >
+              🗑️
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1939,6 +2214,23 @@ function OwnerMessages() {
     toast.success("השיחה נמחקה בהצלחה");
     if (activeId === convId) setActiveId(null);
     qc.invalidateQueries({ queryKey: ["owner-convs"] });
+  };
+
+  const deleteSingleMessage = async (msgId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("האם למחוק הודעה זו לצמיתות?")) return;
+    try {
+      const { error } = await supabase.from("conversation_messages").delete().eq("id", msgId);
+      if (error) {
+        toast.error("שגיאה במחיקת הודעה: " + error.message);
+      } else {
+        toast.success("ההודעה נמחקה בהצלחה");
+        qc.invalidateQueries({ queryKey: ["owner-conv-messages", activeId] });
+        qc.invalidateQueries({ queryKey: ["owner-convs"] });
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "שגיאה במחיקה");
+    }
   };
 
   const filteredConvs = convs.filter((c) => {
@@ -2053,8 +2345,18 @@ function OwnerMessages() {
             </div>
             <div className="flex-1 space-y-2 overflow-y-auto pb-2">
               {messages.map((m) => (
-                <div key={m.id} className={`max-w-[70%] rounded-2xl px-3 py-2 text-sm ${m.sender_role === "user" ? "bg-muted" : "ms-auto bg-primary text-primary-foreground"}`}>
-                  {m.body}
+                <div key={m.id} className={`group relative max-w-[75%] rounded-2xl px-3 py-2 text-sm ${m.sender_role === "user" ? "bg-muted" : "ms-auto bg-primary text-primary-foreground"}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 whitespace-pre-wrap">{m.body}</div>
+                    <button
+                      type="button"
+                      onClick={(e) => deleteSingleMessage(m.id, e)}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 text-destructive hover:bg-destructive/10 rounded transition-opacity"
+                      title="מחק הודעה זו"
+                    >
+                      🗑️
+                    </button>
+                  </div>
                   <div className="mt-1 text-[10px] opacity-70">{new Date(m.created_at).toLocaleString()}</div>
                 </div>
               ))}
@@ -2083,6 +2385,7 @@ function UsersPanel() {
   const qc = useQueryClient();
   const createFn = useServerFn(adminCreateUser);
   const setRoleFn = useServerFn(adminSetUserRole);
+  const deleteFn = useServerFn(adminDeleteUser);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -2090,6 +2393,33 @@ function UsersPanel() {
   const [role, setRole] = useState<"player" | "owner">("player");
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
+
+  const deleteUser = async (userId: string, username: string) => {
+    if (userId === currentUser?.id) {
+      toast.error("אי אפשר למחוק את עצמך");
+      return;
+    }
+    if (!confirm(`האם למחוק לצמיתות את המשתמש "${username}"?`)) return;
+    try {
+      gameDataStore.deleteRow("profiles", userId);
+      gameDataStore.deleteRow("active_players", userId);
+      gameDataStore.deleteRow("admins", userId);
+      gameDataStore.deleteRow("user_roles", userId);
+
+      await supabase.from("user_roles").delete().eq("user_id", userId);
+      await supabase.from("admins").delete().eq("user_id", userId);
+      await supabase.from("active_players").delete().eq("user_id", userId);
+      await supabase.from("profiles").delete().eq("id", userId);
+
+      await deleteFn({ data: { user_id: userId } }).catch(() => {});
+
+      toast.success("המשתמש נמחק לצמיתות");
+      qc.invalidateQueries({ queryKey: ["admin-users-list"] });
+      qc.invalidateQueries({ queryKey: ["own-players"] });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "שגיאה במחיקת משתמש");
+    }
+  };
 
   const { data: users = [] } = useQuery({
     queryKey: ["admin-users-list"],
@@ -2205,6 +2535,7 @@ function UsersPanel() {
                 <SortHeader label="💎" sortKey="credits" />
                 <SortHeader label="תפקיד" sortKey="roles" />
                 <th className="py-2 text-start">שינוי תפקיד</th>
+                <th className="py-2 text-start">פעולות</th>
               </tr>
             </thead>
             <tbody>
@@ -2237,11 +2568,23 @@ function UsersPanel() {
                           className="chrome-panel px-2 py-1 text-xs">⬆ הפוך לבעלים</button>
                       )}
                     </td>
+                    <td className="p-2">
+                      {!isSelf && (
+                        <button
+                          type="button"
+                          onClick={() => deleteUser(u.id, u.username || u.display_name || u.id)}
+                          className="rounded-lg bg-destructive/15 px-2 py-1 text-xs font-bold text-destructive hover:bg-destructive/25 transition-colors"
+                          title="מחיקת משתמש לצמיתות"
+                        >
+                          🗑️ מחיקה
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
               {sortedUsers.length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">אין משתמשים תואמים</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-muted-foreground">אין משתמשים תואמים</td></tr>
               )}
             </tbody>
           </table>

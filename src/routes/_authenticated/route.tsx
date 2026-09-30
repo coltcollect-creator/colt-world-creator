@@ -75,36 +75,17 @@ function AuthedLayout() {
     },
   });
 
-  const { data: verifyRequired = true } = useQuery({
-    queryKey: ["email-verification-required"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("game_settings")
-        .select("email_verification_required")
-        .eq("id", 1)
-        .maybeSingle();
-      return (data?.email_verification_required ?? true) as boolean;
-    },
-  });
-
-
   useEffect(() => {
     if (loading || !user || !profile) return;
-    const mustVerify = verifyRequired && !isOwner && !profile.email_verified;
-    if (mustVerify && loc.pathname !== "/verify-email") {
-      navigate({ to: "/verify-email" });
-      return;
-    }
     const hasCharacter = Boolean(
       profile.character_id ||
       profile.avatar_config?._initialized ||
       Object.keys(profile.avatar_config ?? {}).length > 0
     );
-    if (!mustVerify && !hasCharacter && loc.pathname !== "/character-setup") {
+    if (!hasCharacter && loc.pathname !== "/character-setup") {
       navigate({ to: "/character-setup" });
     }
-  }, [loading, user, profile, isOwner, verifyRequired, loc.pathname, navigate]);
-
+  }, [loading, user, profile, loc.pathname, navigate]);
 
   // Close the drawer whenever the route changes
   useEffect(() => { setMenuOpen(false); }, [loc.pathname]);

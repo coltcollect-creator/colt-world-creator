@@ -48,6 +48,19 @@ const SHARED_FIRESTORE_TABLES = new Set([
   "conversation_messages",
   "auction_bids",
   "game_settings",
+  "maps",
+  "map_versions",
+  "map_objects",
+  "profiles",
+  "admins",
+  "user_roles",
+  "treasure_boxes",
+  "clues",
+  "wheel_configs",
+  "mystery_boxes",
+  "player_notifications",
+  "characters",
+  "character_roles",
 ]);
 
 const lastFirestoreFetchTime: Record<string, number> = {};
@@ -156,17 +169,23 @@ function ensureLocalProfile(uid: string, email?: string, username?: string) {
   const finalUsername = isOwnerEmail ? "ColtCollect" : (username || (email ? email.split("@")[0] : "Colt"));
   const defaultCredits = isOwnerEmail ? (originalOwnerProf?.credits ?? 9845) : 5;
   const defaultXp = isOwnerEmail ? (originalOwnerProf?.xp ?? 225) : 0;
-  const defaultCharId = isOwnerEmail
-    ? (originalOwnerProf?.character_id || "d14fed03-b2c5-4205-b2ff-a151345151ee")
-    : "d7fc1b37-dae3-4bd0-bab1-3c21a4a51571";
   
+  // Default to modern character, never force the deleted legacy ninja
+  const defaultCharId = "adventurer-orion";
+  const finalCharId = existing?.character_id && existing.character_id !== "d14fed03-b2c5-4205-b2ff-a151345151ee"
+    ? existing.character_id
+    : (isOwnerEmail && originalOwnerProf?.character_id && originalOwnerProf.character_id !== "d14fed03-b2c5-4205-b2ff-a151345151ee"
+        ? originalOwnerProf.character_id
+        : defaultCharId);
+  
+  let profileRow: any;
   if (!existing) {
-    gameDataStore.upsertRow("profiles", {
+    profileRow = {
       id: uid,
       username: finalUsername,
       display_name: isOwnerEmail ? "ColtCollect" : finalUsername,
       avatar_config: isOwnerEmail ? (originalOwnerProf?.avatar_config || { _initialized: true }) : { _initialized: true },
-      character_id: defaultCharId,
+      character_id: finalCharId,
       credits: defaultCredits,
       level: 1,
       xp: defaultXp,
@@ -178,29 +197,62 @@ function ensureLocalProfile(uid: string, email?: string, username?: string) {
       is_muted: false,
       email_verified: true,
       settings: {},
-    });
+    };
+    gameDataStore.upsertRow("profiles", profileRow);
   } else {
     // If existing profile was empty or uninitialized or owner got downgraded
-    if (isOwnerEmail && (existing.credits < 1000 || existing.credits == null || existing.username === "Player" || existing.username?.startsWith("guest_"))) {
-      gameDataStore.updateRow("profiles", uid, {
-        username: "ColtCollect",
-        display_name: "ColtCollect",
-        credits: originalOwnerProf?.credits ?? 9845,
-        xp: originalOwnerProf?.xp ?? 225,
-        character_id: defaultCharId,
-        avatar_config: originalOwnerProf?.avatar_config || { _initialized: true },
-        email_verified: true,
-      });
+    const isOldNinja = existing.character_id === "d14fed03-b2c5-4205-b2ff-a151345151ee";
+    const needsOwnerRestore = isOwnerEmail && (existing.credits < 1000 || existing.credits == null || existing.username === "Player" || existing.username?.startsWith("guest_"));
+
+    if (needsOwnerRestore || isOldNinja) {
+      const updates: any = {};
+      if (needsOwnerRestore) {
+        updates.username = "ColtCollect";
+        updates.display_name = "ColtCollect";
+        updates.credits = originalOwnerProf?.credits ?? 9845;
+        updates.xp = originalOwnerProf?.xp ?? 225;
+        updates.email_verified = true;
+      }
+      if (isOldNinja) {
+        updates.character_id = defaultCharId;
+      }
+      profileRow = gameDataStore.updateRow("profiles", uid, updates);
+    } else {
+      profileRow = existing;
     }
   }
 
   // Grant admin & owner if email matches owner
   if (isOwnerEmail) {
-    gameDataStore.upsertRow("admins", { id: uid, user_id: uid, email: email || "coltcollect@gmail.com" });
-    gameDataStore.upsertRow("user_roles", { id: `owner_${uid}`, user_id: uid, role: "owner" });
-    gameDataStore.upsertRow("user_roles", { id: `admin_${uid}`, user_id: uid, role: "admin" });
+    const adminRec = { id: uid, user_id: uid, email: email || "coltcollect@gmail.com" };
+    const ownerRec = { id: `owner_${uid}`, user_id: uid, role: "owner" };
+    const adminRoleRec = { id: `admin_${uid}`, user_id: uid, role: "admin" };
+    gameDataStore.upsertRow("admins", adminRec);
+    gameDataStore.upsertRow("user_roles", ownerRec);
+    gameDataStore.upsertRow("user_roles", adminRoleRec);
+
+    if (typeof window !== "undefined" && db) {
+      try {
+        setDoc(doc(db, "admins", uid), cleanForFirestore(adminRec), { merge: true }).catch(() => {});
+        setDoc(doc(db, "user_roles", `owner_${uid}`), cleanForFirestore(ownerRec), { merge: true }).catch(() => {});
+        setDoc(doc(db, "user_roles", `admin_${uid}`), cleanForFirestore(adminRoleRec), { merge: true }).catch(() => {});
+      } catch {}
+    }
   } else {
-    gameDataStore.upsertRow("user_roles", { id: `player_${uid}`, user_id: uid, role: "player" });
+    const playerRoleRec = { id: `player_${uid}`, user_id: uid, role: "player" };
+    gameDataStore.upsertRow("user_roles", playerRoleRec);
+    if (typeof window !== "undefined" && db) {
+      try {
+        setDoc(doc(db, "user_roles", `player_${uid}`), cleanForFirestore(playerRoleRec), { merge: true }).catch(() => {});
+      } catch {}
+    }
+  }
+
+  // Sync profile to Firestore so live and owner interfaces share identical database state
+  if (typeof window !== "undefined" && db && profileRow) {
+    try {
+      setDoc(doc(db, "profiles", uid), cleanForFirestore(profileRow), { merge: true }).catch(() => {});
+    } catch {}
   }
 }
 
@@ -376,22 +428,62 @@ class QueryBuilder {
       }
 
       if (this.opType === "delete") {
-        const { data: matched } = await this.fetchDocs();
-        if (matched && matched.length > 0) {
-          for (const item of matched) {
-            gameDataStore.deleteRow(this.colName, item.id);
-            notifyTableChange(this.colName, "DELETE", null, item);
-            if (SHARED_FIRESTORE_TABLES.has(this.colName)) {
-              try {
-                await deleteDoc(doc(db, this.colName, String(item.id)));
-              } catch {}
+        const idFilter = this.filters.find((f) => f.field === "id" && f.op === "==");
+        if (idFilter && idFilter.value != null) {
+          const directId = String(idFilter.value);
+          gameDataStore.deleteRow(this.colName, directId);
+          notifyTableChange(this.colName, "DELETE", null, { id: directId });
+          if (SHARED_FIRESTORE_TABLES.has(this.colName)) {
+            try {
+              await deleteDoc(doc(db, this.colName, directId));
+            } catch (err) {
+              console.warn(`Firestore deleteDoc error on ${this.colName}/${directId}:`, err);
             }
           }
         }
-        return { data: null, count: matched?.length || 0, error: null };
+
+        const { data: matched } = await this.fetchDocs();
+        if (matched && matched.length > 0) {
+          for (const item of matched) {
+            const itemId = String(item.id);
+            gameDataStore.deleteRow(this.colName, itemId);
+            notifyTableChange(this.colName, "DELETE", null, item);
+            if (SHARED_FIRESTORE_TABLES.has(this.colName)) {
+              try {
+                await deleteDoc(doc(db, this.colName, itemId));
+              } catch (err) {
+                console.warn(`Firestore deleteDoc error on ${this.colName}/${itemId}:`, err);
+              }
+            }
+          }
+        }
+        return { data: null, count: (matched?.length || 0) + (idFilter ? 1 : 0), error: null };
       }
 
       if (this.opType === "update") {
+        const idFilter = this.filters.find((f) => f.field === "id" && f.op === "==");
+        if (idFilter && idFilter.value != null) {
+          const directId = String(idFilter.value);
+          const updated = gameDataStore.updateRow(this.colName, directId, this.payload);
+          notifyTableChange(this.colName, "UPDATE", updated || { id: directId, ...this.payload });
+          if (SHARED_FIRESTORE_TABLES.has(this.colName)) {
+            try {
+              const docRef = doc(db, this.colName, directId);
+              await setDoc(
+                docRef,
+                cleanForFirestore({
+                  ...this.payload,
+                  id: directId,
+                  updated_at: new Date().toISOString(),
+                }),
+                { merge: true }
+              );
+            } catch (err) {
+              console.warn(`Firestore direct update sync error on ${this.colName}:`, err);
+            }
+          }
+        }
+
         const { data: matched } = await this.fetchDocs();
         if (matched && matched.length > 0) {
           for (const item of matched) {
@@ -400,18 +492,22 @@ class QueryBuilder {
             if (SHARED_FIRESTORE_TABLES.has(this.colName)) {
               try {
                 const docRef = doc(db, this.colName, String(item.id));
-                await setDoc(docRef, cleanForFirestore({
-                  ...item,
-                  ...this.payload,
-                  updated_at: new Date().toISOString(),
-                }), { merge: true });
+                await setDoc(
+                  docRef,
+                  cleanForFirestore({
+                    ...item,
+                    ...this.payload,
+                    updated_at: new Date().toISOString(),
+                  }),
+                  { merge: true }
+                );
               } catch (err) {
                 console.warn(`Firestore update sync error on ${this.colName}:`, err);
               }
             }
           }
         }
-        return { data: this.payload, count: matched?.length || 0, error: null };
+        return { data: this.payload, count: matched?.length || (idFilter ? 1 : 0), error: null };
       }
 
       // Default select
@@ -434,8 +530,10 @@ class QueryBuilder {
             const snap = await getDocs(collection(db, this.colName));
             if (!snap.empty) {
               for (const d of snap.docs) {
-                const row = { ...d.data(), id: d.id };
-                gameDataStore.upsertRow(this.colName, row);
+                if (!gameDataStore.isDeleted(this.colName, d.id)) {
+                  const row = { ...d.data(), id: d.id };
+                  gameDataStore.upsertRow(this.colName, row);
+                }
               }
             }
           } catch (e) {
@@ -1192,7 +1290,25 @@ export const supabase = {
         };
       } catch (err: any) {
         console.warn(`OAuth sign-in popup error for ${p}:`, err);
-        return { data: { user: null, session: null }, error: err };
+        const code = String(err?.code || "");
+        const message = String(err?.message || "");
+        const isNotAllowed =
+          code === "auth/operation-not-allowed" ||
+          code === "auth/unauthorized-domain" ||
+          code === "auth/admin-restricted-operation" ||
+          message.includes("operation-not-allowed") ||
+          message.includes("unauthorized");
+
+        return {
+          data: { user: null, session: null },
+          error: {
+            ...err,
+            code: err?.code || (isNotAllowed ? "auth/operation-not-allowed" : "auth/unknown"),
+            message: err?.message || "OAuth login failed",
+            isNotAllowed,
+            provider: p,
+          },
+        };
       }
     },
 

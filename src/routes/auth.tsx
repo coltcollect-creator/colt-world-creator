@@ -16,6 +16,7 @@ function AuthPage() {
   const { next } = Route.useSearch();
   const [busy, setBusy] = useState(false);
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
+  const [providerGuide, setProviderGuide] = useState<"facebook" | "apple" | null>(null);
   const { user, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -32,8 +33,15 @@ function AuthPage() {
     try {
       const res = await supabase.auth.signInWithOAuth({ provider });
       if (res.error) {
+        const errMsg = String(res.error.message || "");
+        const isNotAllowed =
+          errMsg.includes("operation-not-allowed") ||
+          (res.error as any).code === "auth/operation-not-allowed";
+
         if (res.error.code === "auth/popup-closed-by-user") {
           toast.info("ההתחברות בוטלה");
+        } else if (isNotAllowed && (provider === "facebook" || provider === "apple")) {
+          setProviderGuide(provider);
         } else {
           toast.error("שגיאה בהתחברות: " + (res.error.message || "נא לנסות שוב"));
         }
@@ -43,7 +51,12 @@ function AuthPage() {
         else navigate({ to: "/play" });
       }
     } catch (err) {
-      toast.error((err as Error).message);
+      const msg = (err as Error).message || "";
+      if (msg.includes("operation-not-allowed")) {
+        setProviderGuide(provider === "google" ? null : provider);
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setBusy(false);
       setActiveProvider(null);
@@ -72,7 +85,7 @@ function AuthPage() {
             הכניסה וההרשמה דרך חשבונות מאומתים
           </p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            התחברו עם הספק שבאמצעותו יצרתם את החשבון (Google, Meta או Apple) כדי להמשיך ישירות לדמות ולחנות שלכם.
+            התחברו ישירות עם חשבון Google, Meta (Facebook) או Apple ID שלכם כדי להמשיך לדמות ולמתחם היריד.
           </p>
         </div>
 
@@ -134,6 +147,66 @@ function AuthPage() {
             <span>{busy && activeProvider === "apple" ? "מתחבר עם Apple…" : "המשך עם Apple ID"}</span>
           </button>
         </div>
+
+        {/* Modal Guide when provider is unauthorized in Firebase Console */}
+        {providerGuide && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="chrome-panel w-full max-w-md p-6 space-y-4 shadow-2xl border-2 border-primary">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">{providerGuide === "facebook" ? "📘" : "🍏"}</span>
+                  <h3 className="font-bold text-base">
+                    הגדרת ספק {providerGuide === "facebook" ? "Meta / Facebook" : "Apple ID"}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setProviderGuide(null)}
+                  className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
+                <p className="font-bold mb-1">הספק דורש הפעלה ב-Firebase Console</p>
+                <p>
+                  כדי שמשתמשים יוכלו להתחבר עם חשבון {providerGuide === "facebook" ? "Facebook / Meta" : "Apple"} האישי שלהם, יש להזין את מפתחות המפתח שלכם (App ID / Secret) בקונסולת Firebase של הפרויקט.
+                </p>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <p className="font-bold text-foreground">הוראות הפעלה למנהל המערכת:</p>
+                <ol className="list-decimal list-inside space-y-1.5 text-muted-foreground bg-muted/50 p-3 rounded-xl">
+                  <li>היכנסו אל <strong>Firebase Console</strong> בפרויקט</li>
+                  <li>עברו אל <strong>Authentication &gt; Sign-in method</strong></li>
+                  <li>לחצו על <strong>{providerGuide === "facebook" ? "Facebook" : "Apple"}</strong> והפעילו (Enable)</li>
+                  <li>הזינו את ה-App ID וה-Secret מחשבון המפתחים שלכם ולחצו Save</li>
+                </ol>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-border pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProviderGuide(null);
+                    handleOAuthSignIn("google");
+                  }}
+                  className="btn-plastic text-xs px-3 py-1.5"
+                >
+                  🌐 התחבר בינתיים עם Google
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProviderGuide(null)}
+                  className="px-3 py-1.5 rounded-lg text-xs bg-muted hover:bg-muted/80 text-foreground"
+                >
+                  סגור
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mt-8 border-t border-border pt-4 text-center">
           <p className="text-[11px] text-muted-foreground">

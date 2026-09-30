@@ -57,9 +57,10 @@ type Props = {
   stores: Array<{ id: string; name: string }>;
   npcs: Array<{ id: string; name: string }>;
   maps: Array<{ id: string; name: string }>;
+  onPublish?: () => Promise<void> | void;
 };
 
-export function Map3DEditor({ map, versionId, objects, stores, npcs, maps }: Props) {
+export function Map3DEditor({ map, versionId, objects, stores, npcs, maps, onPublish }: Props) {
   const qc = useQueryClient();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [tool, setTool] = useState<Tool>("select");
@@ -228,7 +229,7 @@ export function Map3DEditor({ map, versionId, objects, stores, npcs, maps }: Pro
       <aside className="space-y-3 h-full overflow-y-auto pr-1">
         <div className="chrome-panel p-3">
           <div className="mb-2 text-xs font-bold">כלים (מפת 3D – מבט מלמעלה)</div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 mb-3">
             {TOOLS.map((tl) => (
               <button
                 key={tl.key}
@@ -239,6 +240,14 @@ export function Map3DEditor({ map, versionId, objects, stores, npcs, maps }: Pro
               </button>
             ))}
           </div>
+          {onPublish && (
+            <button
+              onClick={() => onPublish()}
+              className="btn-plastic w-full !py-2 text-xs font-black shadow-md"
+            >
+              🚀 שמירה ופרסום מפה חיה
+            </button>
+          )}
         </div>
 
         {(tool === "store" || tool === "npc") && (

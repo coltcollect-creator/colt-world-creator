@@ -100,6 +100,23 @@ function MessagesPage() {
     qc.invalidateQueries({ queryKey: ["my-conversations"] });
   };
 
+  const deleteSysMsg = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("האם למחוק הודעה זו?")) return;
+    try {
+      const { error } = await supabase.from("player_notifications").delete().eq("id", id);
+      if (error) {
+        toast.error("שגיאה במחיקה: " + error.message);
+      } else {
+        toast.success("ההודעה נמחקה");
+        qc.invalidateQueries({ queryKey: ["system-messages"] });
+        qc.invalidateQueries({ queryKey: ["my-unread"] });
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "שגיאה במחיקה");
+    }
+  };
+
   return (
     <div className="grid gap-3 md:grid-cols-[280px_1fr]">
       <div className="chrome-panel p-3">
@@ -138,10 +155,20 @@ function MessagesPage() {
           <div className="flex-1 space-y-2 overflow-y-auto">
             <div className="mb-1 text-xs font-bold text-muted-foreground">📢 הודעות מהמערכת — הודעות אלו הן חד-כיווניות ואין אפשרות להשיב עליהן.</div>
             {sysMsgs.map((m) => (
-              <div key={m.id} className="rounded-2xl border-2 border-primary/30 bg-muted/60 px-3 py-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground">הודעה מהמערכת</span>
-                  <span className="font-black">{m.title}</span>
+              <div key={m.id} className="group relative rounded-2xl border-2 border-primary/30 bg-muted/60 px-3 py-2 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground">הודעה מהמערכת</span>
+                    <span className="font-black">{m.title}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => deleteSysMsg(m.id, e)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-destructive hover:bg-destructive/10 rounded transition-opacity"
+                    title="מחק הודעה זו"
+                  >
+                    🗑️
+                  </button>
                 </div>
                 {m.body && <div className="mt-1 whitespace-pre-wrap">{m.body}</div>}
                 {m.link && <a href={m.link} className="mt-1 inline-block text-xs font-bold text-primary underline">צפייה</a>}

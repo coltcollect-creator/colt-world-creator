@@ -4,13 +4,15 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/owner")({
   ssr: false,
   beforeLoad: async () => {
-    let { data: userData } = await supabase.auth.getUser();
+    const { data: userData } = await supabase.auth.getUser();
     let currentUser = userData?.user;
     if (!currentUser && typeof window !== "undefined") {
       try {
         const raw = localStorage.getItem("colt_auth_session_v1");
         if (raw) currentUser = JSON.parse(raw);
-      } catch {}
+      } catch (e) {
+        console.warn(e);
+      }
     }
     if (!currentUser) throw redirect({ to: "/auth" });
     const [{ data: roles }, { data: admin }] = await Promise.all([

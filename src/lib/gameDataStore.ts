@@ -46,19 +46,49 @@ for (const t of requiredTables) {
   if (!store[t]) store[t] = [];
 }
 
-// Load persisted local overrides from localStorage
-const LOCAL_STORAGE_KEY = "colt_world_db_overrides_v1";
+// Load persisted local overrides and deletions from localStorage
+const LOCAL_STORAGE_KEY = "colt_world_db_overrides_v2";
+const LOCAL_STORAGE_DELETED_KEY = "colt_world_db_deleted_ids_v2";
+
+const deletedIdsMap: Record<string, Set<string>> = {};
 
 function loadPersistedOverrides() {
   if (typeof window === "undefined") return;
   try {
+    // Purge legacy v1 cache if found to eliminate obsolete dummy accounts
+    try {
+      localStorage.removeItem("colt_world_db_overrides_v1");
+      localStorage.removeItem("colt_world_db_deleted_ids_v1");
+    } catch {}
+
+    const rawDeleted = localStorage.getItem(LOCAL_STORAGE_DELETED_KEY);
+    if (rawDeleted) {
+      const parsed = JSON.parse(rawDeleted);
+      for (const [table, ids] of Object.entries(parsed)) {
+        if (Array.isArray(ids)) {
+          deletedIdsMap[table] = new Set(ids.map(String));
+        }
+      }
+    }
+
+    // Purge any baseline items that were previously marked deleted
+    for (const [table, idsSet] of Object.entries(deletedIdsMap)) {
+      if (store[table]) {
+        store[table] = store[table].filter((r) => !idsSet.has(String(r.id)) && (!r.user_id || !idsSet.has(String(r.user_id))));
+      }
+    }
+
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (!raw) return;
     const overrides = JSON.parse(raw);
     for (const [table, rows] of Object.entries(overrides)) {
       if (!Array.isArray(rows)) continue;
       if (!store[table]) store[table] = [];
+      const idsSet = deletedIdsMap[table];
       for (const row of rows as Row[]) {
+        if (idsSet && (idsSet.has(String(row.id)) || (row.user_id && idsSet.has(String(row.user_id))))) {
+          continue;
+        }
         const idx = store[table].findIndex((r) => String(r.id) === String(row.id));
         if (idx >= 0) {
           store[table][idx] = { ...store[table][idx], ...row };
@@ -82,7 +112,6 @@ function scheduleSave(tableName: string) {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      // We only persist tables that users mutate directly to avoid storage bloat
       const persistable = [
         "profiles",
         "orders",
@@ -94,6 +123,11 @@ function scheduleSave(tableName: string) {
         "store_messages",
         "auction_bids",
         "user_roles",
+        "admins",
+        "map_objects",
+        "map_versions",
+        "maps",
+        "game_settings",
       ];
       const payload: Record<string, Row[]> = {};
       for (const t of persistable) {
@@ -102,6 +136,14 @@ function scheduleSave(tableName: string) {
         }
       }
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
+
+      const deletedPayload: Record<string, string[]> = {};
+      for (const [t, set] of Object.entries(deletedIdsMap)) {
+        if (set.size > 0) {
+          deletedPayload[t] = Array.from(set);
+        }
+      }
+      localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(deletedPayload));
     } catch (e) {
       console.warn("LocalStorage save error:", e);
     }
@@ -113,6 +155,10 @@ loadPersistedOverrides();
 export const gameDataStore = {
   getTable(tableName: string): Row[] {
     if (!store[tableName]) store[tableName] = [];
+    const delSet = deletedIdsMap[tableName];
+    if (delSet && delSet.size > 0) {
+      return store[tableName].filter((r) => !delSet.has(String(r.id)) && (!r.user_id || !delSet.has(String(r.user_id))));
+    }
     return store[tableName];
   },
 
@@ -121,12 +167,21 @@ export const gameDataStore = {
     return table.find((r) => String(r.id) === String(id)) || null;
   },
 
+  isDeleted(tableName: string, id: string | number): boolean {
+    return !!deletedIdsMap[tableName]?.has(String(id));
+  },
+
   upsertRow(tableName: string, row: Row): Row {
-    const table = this.getTable(tableName);
-    // If active_players, use user_id as primary key to prevent duplicate player rows
+    const table = store[tableName] || (store[tableName] = []);
     const id = row.id != null
       ? String(row.id)
       : (tableName === "active_players" && row.user_id != null ? String(row.user_id) : crypto.randomUUID());
+    
+    // If it was previously marked deleted, un-delete if explicitly upserted with new data
+    if (deletedIdsMap[tableName]?.has(id)) {
+      deletedIdsMap[tableName].delete(id);
+    }
+
     const dataToSave = {
       ...row,
       id,
@@ -146,7 +201,7 @@ export const gameDataStore = {
   },
 
   updateRow(tableName: string, id: string | number, updates: Partial<Row>): Row | null {
-    const table = this.getTable(tableName);
+    const table = store[tableName] || (store[tableName] = []);
     const idx = table.findIndex((r) => String(r.id) === String(id));
     if (idx >= 0) {
       table[idx] = { ...table[idx], ...updates, updated_at: new Date().toISOString() };
@@ -157,13 +212,18 @@ export const gameDataStore = {
   },
 
   deleteRow(tableName: string, id: string | number): boolean {
-    const table = this.getTable(tableName);
-    const idx = table.findIndex((r) => String(r.id) === String(id));
+    const table = store[tableName] || (store[tableName] = []);
+    const sid = String(id);
+    if (!deletedIdsMap[tableName]) {
+      deletedIdsMap[tableName] = new Set<string>();
+    }
+    deletedIdsMap[tableName].add(sid);
+
+    const idx = table.findIndex((r) => String(r.id) === sid || (tableName === "active_players" && r.user_id && String(r.user_id) === sid));
     if (idx >= 0) {
       table.splice(idx, 1);
-      scheduleSave(tableName);
-      return true;
     }
-    return false;
+    scheduleSave(tableName);
+    return true;
   },
 };
