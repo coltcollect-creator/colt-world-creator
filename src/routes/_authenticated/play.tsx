@@ -74,10 +74,38 @@ function PlayPage() {
       };
 
       try {
-        const mapQuery = activeMapId
-          ? supabase.from("maps").select("*").eq("id", activeMapId).maybeSingle()
-          : supabase.from("maps").select("*").eq("is_active", true).order("updated_at", { ascending: false }).limit(1).maybeSingle();
-        const { data: mapRow } = await mapQuery;
+        let mapRow = null;
+        if (activeMapId) {
+          const res = await supabase.from("maps").select("*").eq("id", activeMapId).maybeSingle();
+          mapRow = res.data;
+        } else {
+          // Fetch active maps, prioritizing the main map ("מפה ראשית" / "main-lobby")
+          const { data: activeMaps } = await supabase
+            .from("maps")
+            .select("*")
+            .eq("is_active", true)
+            .eq("is_archived", false);
+
+          if (activeMaps && activeMaps.length > 0) {
+            mapRow =
+              activeMaps.find(
+                (m) =>
+                  m.slug?.toLowerCase().includes("main") ||
+                  m.name?.includes("ראשית") ||
+                  m.id === "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9"
+              ) || activeMaps[0];
+          }
+
+          if (!mapRow) {
+            const { data: mainBySlug } = await supabase
+              .from("maps")
+              .select("*")
+              .or("id.eq.f5bb3160-7415-4f62-b72c-f04d1fcbd1a9,slug.ilike.%main%")
+              .limit(1)
+              .maybeSingle();
+            mapRow = mainBySlug;
+          }
+        }
         
         const currentMap = mapRow || fallbackMap;
 
