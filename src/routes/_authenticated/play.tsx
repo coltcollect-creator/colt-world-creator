@@ -60,12 +60,7 @@ function PlayPage() {
   const { data: mapBundle } = useQuery({
     queryKey: ["active-map", activeMapId],
     queryFn: async () => {
-      const mapQuery = activeMapId
-        ? supabase.from("maps").select("*").eq("id", activeMapId).maybeSingle()
-        : supabase.from("maps").select("*").eq("is_active", true).order("updated_at", { ascending: false }).limit(1).maybeSingle();
-      const { data: mapRow } = await mapQuery;
-      
-      const currentMap = mapRow || {
+      const fallbackMap = {
         id: "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9",
         slug: "main-lobby",
         name: "מפה ראשית (Main Lobby)",
@@ -78,38 +73,56 @@ function PlayPage() {
         background_color: "#c8ecff",
       };
 
-      const { data: version } = await supabase
-        .from("map_versions")
-        .select("*")
-        .eq("map_id", currentMap.id)
-        .order("version_number", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      try {
+        const mapQuery = activeMapId
+          ? supabase.from("maps").select("*").eq("id", activeMapId).maybeSingle()
+          : supabase.from("maps").select("*").eq("is_active", true).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+        const { data: mapRow } = await mapQuery;
+        
+        const currentMap = mapRow || fallbackMap;
 
-      const verId = version?.id || "34e2d77d-a542-4f2b-9425-cfe269c18636";
-      const { data: objs } = await supabase.from("map_objects").select("*").eq("map_version_id", verId);
-      
-      const isMainLobby = currentMap.id === "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9" || currentMap.slug === "main-lobby";
-      const fallbackObjects: MapObject[] = isMainLobby
-        ? [
-            { id: "obj-ground", map_version_id: verId, object_type: "platform", x: 0, y: 700, width: 2400, height: 60, layer: 1, collision: true, interactive: false, metadata: { color: "#4ade80", label: "רצפת היריד" } },
-            { id: "obj-wall-left", map_version_id: verId, object_type: "platform", x: 0, y: 0, width: 30, height: 760, layer: 1, collision: true, interactive: false, metadata: { color: "#64748b" } },
-            { id: "obj-wall-right", map_version_id: verId, object_type: "platform", x: 2370, y: 0, width: 30, height: 760, layer: 1, collision: true, interactive: false, metadata: { color: "#64748b" } },
-            { id: "obj-store-cards", map_version_id: verId, object_type: "store", reference_id: "store-colt-cards", x: 350, y: 540, width: 160, height: 160, layer: 2, collision: false, interactive: true, metadata: { label: "🃏 שוק הקלפים" } },
-            { id: "obj-store-wheel", map_version_id: verId, object_type: "store", reference_id: "store-wheel", x: 750, y: 540, width: 160, height: 160, layer: 2, collision: false, interactive: true, metadata: { label: "🎡 גלגל המזל" } },
-            { id: "obj-store-mystery", map_version_id: verId, object_type: "store", reference_id: "store-mystery", x: 1150, y: 540, width: 160, height: 160, layer: 2, collision: false, interactive: true, metadata: { label: "🎁 קופסאות מסתורין" } },
-            { id: "obj-store-cosmetics", map_version_id: verId, object_type: "store", reference_id: "store-cosmetics", x: 1550, y: 540, width: 160, height: 160, layer: 2, collision: false, interactive: true, metadata: { label: "👕 בוטיק הכובעים" } },
-            { id: "obj-store-auction", map_version_id: verId, object_type: "store", reference_id: "store-auction", x: 1950, y: 540, width: 160, height: 160, layer: 2, collision: false, interactive: true, metadata: { label: "🔨 מכרזים חיים" } },
-            { id: "obj-npc-guide", map_version_id: verId, object_type: "npc", reference_id: "npc-guide", x: 180, y: 580, width: 80, height: 120, layer: 2, collision: false, interactive: true, metadata: { label: "מדריך קולט" } },
-            { id: "obj-npc-professor", map_version_id: verId, object_type: "npc", reference_id: "npc-professor", x: 1380, y: 580, width: 80, height: 120, layer: 2, collision: false, interactive: true, metadata: { label: "פרופסור אוק" } },
-          ]
-        : [
-            { id: `obj-ground-${currentMap.id}`, map_version_id: verId, object_type: "platform", x: 0, y: (currentMap.height || 720) - 60, width: currentMap.width || 2400, height: 60, layer: 1, collision: true, interactive: false, metadata: { color: "#8b5a3c", label: "רצפת החדר" } },
-          ];
+        const { data: version } = await supabase
+          .from("map_versions")
+          .select("*")
+          .eq("map_id", currentMap.id)
+          .order("version_number", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      const finalObjs = objs && objs.length > 0 ? objs : fallbackObjects;
-      return { map: currentMap, objects: finalObjs as unknown as MapObject[], version: ver || { id: verId } };
+        const verId = version?.id || "34e2d77d-a542-4f2b-9425-cfe269c18636";
+        const { data: objs } = await supabase.from("map_objects").select("*").eq("map_version_id", verId);
+        
+        const isMainLobby = currentMap.id === "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9" || currentMap.slug === "main-lobby";
+        const fallbackObjects: MapObject[] = isMainLobby
+          ? [
+              { id: "obj-ground", map_version_id: verId, object_type: "platform", x: 0, y: 700, width: 2400, height: 60, layer: 1, collision: true, interactive: false, metadata: { color: "#4ade80", label: "רצפת היריד" } },
+              { id: "obj-wall-left", map_version_id: verId, object_type: "platform", x: 0, y: 0, width: 30, height: 760, layer: 1, collision: true, interactive: false, metadata: { color: "#64748b" } },
+              { id: "obj-wall-right", map_version_id: verId, object_type: "platform", x: 2370, y: 0, width: 30, height: 760, layer: 1, collision: true, interactive: false, metadata: { color: "#64748b" } },
+              { id: "obj-store-cards", map_version_id: verId, object_type: "store", reference_id: "store-colt-cards", x: 350, y: 540, width: 160, height: 160, layer: 2, collision: false, interactive: true, metadata: { label: "🃏 שוק הקלפים" } },
+              { id: "obj-store-wheel", map_version_id: verId, object_type: "store", reference_id: "store-wheel", x: 750, y: 540, width: 160, height: 160, layer: 2, collision: false, interactive: true, metadata: { label: "🎡 גלגל המזל" } },
+              { id: "obj-store-mystery", map_version_id: verId, object_type: "store", reference_id: "store-mystery", x: 1150, y: 540, width: 160, height: 160, layer: 2, collision: false, interactive: true, metadata: { label: "🎁 קופסאות מסתורין" } },
+              { id: "obj-store-cosmetics", map_version_id: verId, object_type: "store", reference_id: "store-cosmetics", x: 1550, y: 540, width: 160, height: 160, layer: 2, collision: false, interactive: true, metadata: { label: "👕 בוטיק הכובעים" } },
+              { id: "obj-store-auction", map_version_id: verId, object_type: "store", reference_id: "store-auction", x: 1950, y: 540, width: 160, height: 160, layer: 2, collision: false, interactive: true, metadata: { label: "🔨 מכרזים חיים" } },
+              { id: "obj-npc-guide", map_version_id: verId, object_type: "npc", reference_id: "npc-guide", x: 180, y: 580, width: 80, height: 120, layer: 2, collision: false, interactive: true, metadata: { label: "מדריך קולט" } },
+              { id: "obj-npc-professor", map_version_id: verId, object_type: "npc", reference_id: "npc-professor", x: 1380, y: 580, width: 80, height: 120, layer: 2, collision: false, interactive: true, metadata: { label: "פרופסור אוק" } },
+            ]
+          : [
+              { id: `obj-ground-${currentMap.id}`, map_version_id: verId, object_type: "platform", x: 0, y: (currentMap.height || 720) - 60, width: currentMap.width || 2400, height: 60, layer: 1, collision: true, interactive: false, metadata: { color: "#8b5a3c", label: "רצפת החדר" } },
+            ];
+
+        const finalObjs = objs && objs.length > 0 ? objs : fallbackObjects;
+        return { map: currentMap, objects: finalObjs as unknown as MapObject[], version: version || { id: verId } };
+      } catch (err) {
+        console.error("Failed to load map bundle:", err);
+        return {
+          map: fallbackMap,
+          objects: [
+            { id: "obj-ground", map_version_id: "default", object_type: "platform", x: 0, y: 700, width: 2400, height: 60, layer: 1, collision: true, interactive: false, metadata: { color: "#4ade80", label: "רצפת היריד" } },
+          ] as unknown as MapObject[],
+          version: { id: "default" },
+        };
+      }
     },
   });
 
