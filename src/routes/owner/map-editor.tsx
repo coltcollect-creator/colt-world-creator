@@ -155,6 +155,19 @@ function MapEditor() {
     qc.invalidateQueries({ queryKey: ["active-map"] });
   };
 
+  const toggleMapActive = async () => {
+    if (!mapId || !map) return;
+    const nextState = !map.is_active;
+    if (nextState) {
+      await supabase.from("maps").update({ is_active: false } as never).neq("id", mapId);
+    }
+    const { error } = await supabase.from("maps").update({ is_active: nextState } as never).eq("id", mapId);
+    if (error) { toast.error(error.message); return; }
+    toast.success(nextState ? "המפה נקבעה כמפה הראשית הפעילה לכל השחקנים!" : "המפה הוגדרה כלא פעילה");
+    qc.invalidateQueries({ queryKey: ["all-maps"] });
+    qc.invalidateQueries({ queryKey: ["active-map"] });
+  };
+
   const mapW = (map?.width ?? 2400) * zoom;
   const mapH = (map?.height ?? 720) * zoom;
 
@@ -361,7 +374,11 @@ function MapEditor() {
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <select value={mapId ?? ""} onChange={(e) => { setMapId(e.target.value); setSelectedId(null); }} className="rounded-xl border-2 border-border bg-input px-2 py-1 text-xs font-bold">
-            {maps.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {maps.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} {m.is_active ? "⭐ (פעילה לשחקנים)" : ""}
+              </option>
+            ))}
           </select>
           <select
             value={currentDim}
@@ -372,10 +389,22 @@ function MapEditor() {
             <option value="3d">🧊 מפה תלת-מימדית (3D)</option>
             <option value="cool_env">✨ סביבה מגניבה (2.5D עומק)</option>
           </select>
+          <button
+            onClick={toggleMapActive}
+            type="button"
+            className={`rounded-xl px-2.5 py-1 font-bold text-xs transition-all ${
+              map?.is_active
+                ? "bg-emerald-600 text-white shadow hover:bg-emerald-700"
+                : "border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+            }`}
+            title="קבע האם מפה זו תהיה המפה שכל השחקנים נכנסים אליה מיד"
+          >
+            {map?.is_active ? "⭐ מפה פעילה לשחקנים" : "☆ הפוך לפעילה"}
+          </button>
           <button onClick={publish} className="btn-plastic !px-3 !py-1 text-xs">🚀 פרסום</button>
           <LanguageSwitcher />
           <Link to="/owner" className="chrome-panel px-3 py-1">← {t("owner.title")}</Link>
-          <Link to="/play" className="chrome-panel px-3 py-1">{t("owner.enter")}</Link>
+          <Link to={mapId ? `/play?mapId=${mapId}` : "/play"} className="chrome-panel px-3 py-1 font-bold">{t("owner.enter")}</Link>
         </div>
       </div>
 

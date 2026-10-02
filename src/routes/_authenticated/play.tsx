@@ -50,12 +50,11 @@ function PlayPage() {
 
   const [chatOverlay, setChatOverlay] = useState<{ conversationId: string; name: string } | null>(null);
   const [showChat, setShowChat] = useState(false);
-  const [activeMapId, setActiveMapId] = useState<string | null>(null);
-
-  const { data: allMaps = [] } = useQuery({
-    queryKey: ["all-play-maps"],
-    queryFn: async () =>
-      (await supabase.from("maps").select("*").eq("is_archived", false).eq("is_active", true).order("created_at", { ascending: false })).data ?? [],
+  const [activeMapId, setActiveMapId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("mapId") || null;
+    }
+    return null;
   });
 
   const { data: mapBundle } = useQuery({
@@ -63,7 +62,7 @@ function PlayPage() {
     queryFn: async () => {
       const mapQuery = activeMapId
         ? supabase.from("maps").select("*").eq("id", activeMapId).maybeSingle()
-        : supabase.from("maps").select("*").eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        : supabase.from("maps").select("*").eq("is_active", true).order("updated_at", { ascending: false }).limit(1).maybeSingle();
       const { data: mapRow } = await mapQuery;
       
       const currentMap = mapRow || {
@@ -242,29 +241,6 @@ function PlayPage() {
       <QuestProgressToast />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_260px]">
         <div>
-          {allMaps.length > 1 && (
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-900/90 backdrop-blur-md p-2.5 border border-white/10 text-white text-xs shadow-lg">
-              <div className="flex items-center gap-2 font-bold">
-                <span className="text-sm">🗺️ בחר חלל / מפה:</span>
-                <select
-                  value={activeMapId || mapBundle?.map?.id || ""}
-                  onChange={(e) => setActiveMapId(e.target.value)}
-                  className="rounded-xl border border-white/20 bg-slate-800 px-3 py-1.5 font-bold text-white shadow-inner focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
-                >
-                  {allMaps.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.dimension === "cool_env" ? "✨ 2.5D " : m.dimension === "3d" ? "🧊 3D " : "🎬 2D "}
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="text-[11px] opacity-80 flex items-center gap-2">
-                <span>📍 מפה פעילה: <strong>{mapBundle?.map?.name}</strong></span>
-              </div>
-            </div>
-          )}
-
           <div data-tour="game-viewport" className="relative">
             {mapBundle?.map ? (
               isCoolEnv ? (
