@@ -128,46 +128,19 @@ export async function trackQuestAction(
       }
 
       const isCompleted = newProg >= target;
-      const creditReward = Number(q.credit_reward) || Number(q.gems_reward) || 0;
-      const xpReward = Number(q.xp_reward) || 0;
+      const creditReward = Number(q.credit_reward ?? q.gems_reward ?? 0);
+      const xpReward = Number(q.xp_reward ?? 0);
 
       await supabase.from("player_quests").upsert({
         id: existing?.id || `${user.id}_${qId}`,
         user_id: user.id,
         quest_id: qId,
         progress: newProg,
-        claimed_at: isCompleted ? (existing?.claimed_at || new Date().toISOString()) : null,
+        completed_at: isCompleted ? (existing?.completed_at || new Date().toISOString()) : null,
+        claimed_at: existing?.claimed_at || null,
         period_key: isDaily ? todayStr : (q.quest_type === "daily" ? todayStr : "once"),
         updated_at: new Date().toISOString(),
       });
-
-      // Auto-grant rewards directly to player balance upon completion
-      if (isCompleted && (creditReward > 0 || xpReward > 0)) {
-        const { data: prof } = await supabase.from("profiles").select("credits, xp, level").eq("id", user.id).maybeSingle();
-        if (prof) {
-          const newCredits = (prof.credits || 0) + creditReward;
-          await supabase.from("profiles").update({ credits: newCredits }).eq("id", user.id);
-
-          if (xpReward > 0) {
-            await addPlayerXp(user.id, xpReward, `משימה: ${q.name || "הושלמה"}`);
-          }
-          
-          if (creditReward > 0) {
-            await supabase.from("credit_transactions").insert({
-              user_id: user.id,
-              amount: creditReward,
-              balance_before: prof.credits || 0,
-              balance_after: newCredits,
-              transaction_type: "quest_reward",
-              description: `פרס משימה: ${q.name || "משימה הושלמה"}`,
-            });
-          }
-
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("credits-changed"));
-          }
-        }
-      }
 
       // Notify HUD listeners
       const ev: QuestProgressEvent = {

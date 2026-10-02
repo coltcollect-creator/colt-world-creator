@@ -3,7 +3,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Trash2, Save, Sparkles, Award, Gift, Shield } from "lucide-react";
-import { DEFAULT_LEVELS, type LevelMilestone } from "@/lib/progression";
+import { DEFAULT_LEVELS, saveLocalLevelMilestones, type LevelMilestone } from "@/lib/progression";
+import { gameDataStore } from "@/lib/gameDataStore";
+import { db } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
+import { cleanForFirestore, notifyTableChange } from "@/integrations/supabase/client";
 
 export type { LevelMilestone };
 
@@ -66,13 +70,30 @@ export function LevelsBuilderPanel() {
     try {
       // Sort by level
       const sorted = [...levels].sort((a, b) => a.level - b.level);
-      const { error } = await supabase
+
+      // 1. Save locally and dispatch event
+      saveLocalLevelMilestones(sorted);
+
+      // 2. Update gameDataStore
+      const currentSettings = gameDataStore.getById("game_settings", 1) || gameDataStore.getById("game_settings", "1") || { id: 1 };
+      const updatedSettings = { ...currentSettings, level_rewards: sorted };
+      gameDataStore.set("game_settings", updatedSettings);
+
+      // 3. Update Firestore
+      await setDoc(doc(db, "game_settings", "1"), cleanForFirestore(updatedSettings), { merge: true }).catch(() => {});
+      notifyTableChange("game_settings");
+
+      // 4. Update Supabase
+      await supabase
         .from("game_settings")
         .update({ level_rewards: sorted })
-        .eq("id", 1);
-      if (error) throw error;
+        .eq("id", 1)
+        .catch(() => {});
+
       toast.success("מערכת הרמות והפרסים נשמרה בהצלחה! 🏆");
       qc.invalidateQueries({ queryKey: ["game-levels-progression"] });
+      qc.invalidateQueries({ queryKey: ["profile"] });
+      window.dispatchEvent(new CustomEvent("colt-levels-updated", { detail: sorted }));
     } catch (err: any) {
       toast.error(err.message || "שגיאה בשמירה");
     } finally {

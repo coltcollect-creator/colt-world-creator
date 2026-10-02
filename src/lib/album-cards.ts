@@ -10,6 +10,8 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "./firebaseErrors";
+import { gameDataStore } from "./gameDataStore";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 export type CardRarity = "common" | "rare" | "epic" | "legendary";
@@ -117,65 +119,227 @@ export const DEFAULT_ALBUM_CARDS: AlbumCard[] = [
   },
 ];
 
-/** Fetch all available album cards defined by owners */
+/** Fetch all available album cards defined by owners and active quest cards */
 export async function fetchAllAlbumCards(): Promise<AlbumCard[]> {
   const path = "album_cards";
+  const cardMap = new Map<string, AlbumCard>();
+
+  // 1. Load baseline defaults
+  for (const c of DEFAULT_ALBUM_CARDS) {
+    cardMap.set(c.id, c);
+  }
+
+  // 2. Load Firestore album cards
   try {
     const snap = await getDocs(collection(db, path));
-    if (snap.empty) {
-      // Seed default album cards on initial run
-      for (const card of DEFAULT_ALBUM_CARDS) {
-        await setDoc(doc(db, path, card.id), card);
-      }
-      return DEFAULT_ALBUM_CARDS;
-    }
-    const list: AlbumCard[] = [];
     snap.forEach((d) => {
-      list.push({ id: d.id, ...(d.data() as Omit<AlbumCard, "id">) });
+      const data = d.data() as Omit<AlbumCard, "id">;
+      cardMap.set(d.id, { id: d.id, ...data });
     });
-    return list.sort((a, b) => a.card_number - b.card_number);
   } catch (error) {
-    console.warn("Falling back to default cards:", error);
-    return DEFAULT_ALBUM_CARDS;
+    console.warn("Falling back to local cards:", error);
   }
+
+  // 3. Load local gameDataStore album_cards
+  const localCards = gameDataStore.getAll("album_cards");
+  if (Array.isArray(localCards)) {
+    for (const c of localCards) {
+      if (c && c.id) {
+        cardMap.set(String(c.id), c as AlbumCard);
+      }
+    }
+  }
+
+  // 4. Dynamically include any quests that have an icon/image or card metadata
+  const quests = gameDataStore.getAll("quests");
+  let nextNum = 7;
+  for (const q of quests) {
+    const cardImg = q.icon_url || q.image_url || (q.metadata as any)?.card_image_url;
+    const cardTitle = q.cosmetic_reward || (q.metadata as any)?.card_title || q.name;
+    const cardNum = Number(q.title_reward) || Number((q.metadata as any)?.card_number) || nextNum++;
+
+    if (cardImg || q.cosmetic_reward || (q.metadata as any)?.has_card) {
+      const questCardId = `quest-${q.id}`;
+      // Merge or update with current quest properties
+      const existing = cardMap.get(questCardId);
+      cardMap.set(questCardId, {
+        id: questCardId,
+        card_number: cardNum,
+        title: cardTitle || "משימת כנס",
+        description: q.description || "הושלמה במרכז המשימות",
+        image_url: cardImg || "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=600&auto=format&fit=crop&q=80",
+        rarity: (q.metadata as any)?.card_rarity || "rare",
+        source_type: "quest",
+        source_id: q.id,
+        source_name: `משימה: ${q.name}`,
+        active: q.active !== false,
+      });
+    }
+  }
+
+  return Array.from(cardMap.values()).sort((a, b) => a.card_number - b.card_number);
 }
 
-/** Subscribe to user's collected cards */
+/** Synchronizes retroactive quest cards for a player */
+export function getCompletedQuestCardsForUser(userId: string): UserCollectedCard[] {
+  const result: UserCollectedCard[] = [];
+  const playerQuests = gameDataStore.getAll("player_quests").filter((pq) => String(pq.user_id) === String(userId));
+  const quests = gameDataStore.getAll("quests");
+  const questsMap = new Map(quests.map((q) => [String(q.id), q]));
+
+  for (const pq of playerQuests) {
+    const q = questsMap.get(String(pq.quest_id));
+    if (!q) continue;
+
+    const isDone = Number(pq.progress) >= Number(q.target_amount || 1) || Boolean(pq.completed_at) || Boolean(pq.claimed_at);
+    if (!isDone) continue;
+
+    const cardImg = q.icon_url || q.image_url || (q.metadata as any)?.card_image_url;
+    const cardTitle = q.cosmetic_reward || (q.metadata as any)?.card_title || q.name;
+    const cardNum = Number(q.title_reward) || Number((q.metadata as any)?.card_number) || 3;
+
+    if (cardImg || q.cosmetic_reward || (q.metadata as any)?.has_card) {
+      const cardId = `quest-${q.id}`;
+      result.push({
+        id: `${userId}_${cardId}`,
+        user_id: userId,
+        card_id: cardId,
+        card_number: cardNum,
+        card_title: cardTitle || q.name,
+        card_image_url: cardImg || "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=600&auto=format&fit=crop&q=80",
+        card_description: q.description || "משימת כנס",
+        card_rarity: (q.metadata as any)?.card_rarity || "rare",
+        source_type: "quest",
+        source_name: `משימה: ${q.name}`,
+        unlocked_at: pq.completed_at || pq.claimed_at || pq.updated_at || new Date().toISOString(),
+      });
+    }
+  }
+
+  return result;
+}
+
+/** Subscribe to user's collected cards (including real-time retroactive quest card updates) */
 export function subscribeUserCards(
   userId: string,
   onCards: (cards: UserCollectedCard[]) => void
 ) {
   const path = "user_cards";
   const q = query(collection(db, path), where("user_id", "==", userId));
-  return onSnapshot(
+
+  const buildMergedList = (firestoreCards: UserCollectedCard[]) => {
+    const map = new Map<string, UserCollectedCard>();
+    
+    // 1. From local gameDataStore user_cards
+    const local = gameDataStore.getAll("user_cards").filter((c) => String(c.user_id) === String(userId));
+    for (const c of local) {
+      map.set(c.card_id, c as UserCollectedCard);
+    }
+
+    // 2. From Firestore
+    for (const fc of firestoreCards) {
+      map.set(fc.card_id, fc);
+    }
+
+    // 3. Retroactive Completed Quests (Always reflects the newest quest photo & title!)
+    const questCards = getCompletedQuestCardsForUser(userId);
+    for (const qc of questCards) {
+      const existing = map.get(qc.card_id);
+      map.set(qc.card_id, {
+        ...(existing || {}),
+        ...qc,
+        // Preserve original unlock timestamp if present
+        unlocked_at: existing?.unlocked_at || qc.unlocked_at,
+      });
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.card_number - b.card_number);
+  };
+
+  // Initial immediate push from local store + quests
+  onCards(buildMergedList([]));
+
+  // Asynchronously fetch latest remote quests & player_quests to ensure instant retroactive sync
+  (async () => {
+    try {
+      const [questsRes, pQuestsRes] = await Promise.all([
+        supabase.from("quests").select("*"),
+        supabase.from("player_quests").select("*").eq("user_id", userId),
+      ]);
+
+      if (questsRes.data && Array.isArray(questsRes.data)) {
+        for (const q of questsRes.data) {
+          gameDataStore.set("quests", q);
+        }
+      }
+
+      if (pQuestsRes.data && Array.isArray(pQuestsRes.data)) {
+        for (const pq of pQuestsRes.data) {
+          gameDataStore.set("player_quests", pq);
+        }
+      }
+
+      onCards(buildMergedList([]));
+    } catch {}
+  })();
+
+  // Listen for local quest updates
+  const handleQuestUpdate = () => {
+    onCards(buildMergedList([]));
+  };
+  window.addEventListener("colt-quest-updated", handleQuestUpdate);
+  window.addEventListener("card-unlocked", handleQuestUpdate);
+
+  const unsub = onSnapshot(
     q,
     (snap) => {
       const list: UserCollectedCard[] = [];
       snap.forEach((d) => {
         list.push({ id: d.id, ...(d.data() as Omit<UserCollectedCard, "id">) });
       });
-      onCards(list.sort((a, b) => a.card_number - b.card_number));
+      onCards(buildMergedList(list));
     },
     (err) => {
       console.warn("User cards subscription error:", err);
+      onCards(buildMergedList([]));
     }
   );
+
+  return () => {
+    unsub();
+    window.removeEventListener("colt-quest-updated", handleQuestUpdate);
+    window.removeEventListener("card-unlocked", handleQuestUpdate);
+  };
 }
 
 /** Fetch user collected cards once */
 export async function fetchUserCards(userId: string): Promise<UserCollectedCard[]> {
   const path = "user_cards";
+  const map = new Map<string, UserCollectedCard>();
+
   try {
     const q = query(collection(db, path), where("user_id", "==", userId));
     const snap = await getDocs(q);
-    const list: UserCollectedCard[] = [];
     snap.forEach((d) => {
-      list.push({ id: d.id, ...(d.data() as Omit<UserCollectedCard, "id">) });
+      const data = { id: d.id, ...(d.data() as Omit<UserCollectedCard, "id">) };
+      map.set(data.card_id, data);
     });
-    return list.sort((a, b) => a.card_number - b.card_number);
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, path);
+    console.warn("Could not fetch user_cards from remote:", error);
   }
+
+  // Include retroactive completed quest cards
+  const questCards = getCompletedQuestCardsForUser(userId);
+  for (const qc of questCards) {
+    const existing = map.get(qc.card_id);
+    map.set(qc.card_id, {
+      ...(existing || {}),
+      ...qc,
+      unlocked_at: existing?.unlocked_at || qc.unlocked_at,
+    });
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.card_number - b.card_number);
 }
 
 /** Grant a card to user album and trigger celebratory event */
@@ -204,12 +368,16 @@ export async function unlockCardForUser(
       card_image_url: card.image_url,
       card_description: card.description,
       card_rarity: card.rarity,
-      source_type: card.source_type || "event",
+      source_type: card.source_type || "quest",
       source_name: card.source_name || "משימה",
       unlocked_at: new Date().toISOString(),
     };
 
-    await setDoc(doc(db, path, docId), payload);
+    // Save locally
+    gameDataStore.set("user_cards", payload);
+
+    // Save to Firestore
+    await setDoc(doc(db, path, docId), payload).catch(() => {});
 
     // Dispatch global event for animated toast/reveal
     if (typeof window !== "undefined") {
@@ -220,12 +388,10 @@ export async function unlockCardForUser(
       );
     }
 
-    toast.success(`🃏 קלף חדש נוסף לאלבום הכנס שלך: ${card.title}!`, {
-      duration: 6000,
-    });
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+    return false;
   }
 }
 
@@ -234,11 +400,13 @@ export async function saveAlbumCard(card: AlbumCard): Promise<void> {
   const path = "album_cards";
   const id = card.id || `card-${Date.now()}`;
   try {
-    await setDoc(doc(db, path, id), {
+    const payload = {
       ...card,
       id,
       created_at: card.created_at || new Date().toISOString(),
-    });
+    };
+    gameDataStore.set("album_cards", payload);
+    await setDoc(doc(db, path, id), payload).catch(() => {});
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -248,7 +416,8 @@ export async function saveAlbumCard(card: AlbumCard): Promise<void> {
 export async function deleteAlbumCard(cardId: string): Promise<void> {
   const path = "album_cards";
   try {
-    await deleteDoc(doc(db, path, cardId));
+    gameDataStore.delete("album_cards", cardId);
+    await deleteDoc(doc(db, path, cardId)).catch(() => {});
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

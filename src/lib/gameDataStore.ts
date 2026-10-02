@@ -42,6 +42,9 @@ const requiredTables = [
   "vendors",
   "titles",
   "player_titles",
+  "music_tracks",
+  "album_cards",
+  "user_cards",
 ];
 
 for (const t of requiredTables) {
@@ -130,6 +133,9 @@ function scheduleSave(tableName: string) {
         "map_versions",
         "maps",
         "game_settings",
+        "music_tracks",
+        "album_cards",
+        "user_cards",
       ];
       const payload: Record<string, Row[]> = {};
       for (const t of persistable) {
@@ -164,6 +170,10 @@ export const gameDataStore = {
     return store[tableName];
   },
 
+  getAll(tableName: string): Row[] {
+    return this.getTable(tableName);
+  },
+
   getById(tableName: string, id: string | number): Row | null {
     const table = this.getTable(tableName);
     return table.find((r) => String(r.id) === String(id)) || null;
@@ -171,6 +181,14 @@ export const gameDataStore = {
 
   isDeleted(tableName: string, id: string | number): boolean {
     return !!deletedIdsMap[tableName]?.has(String(id));
+  },
+
+  set(tableName: string, row: Row): Row {
+    return this.upsertRow(tableName, row);
+  },
+
+  delete(tableName: string, id: string | number): boolean {
+    return this.deleteRow(tableName, id);
   },
 
   upsertRow(tableName: string, row: Row): Row {

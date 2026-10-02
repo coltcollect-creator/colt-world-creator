@@ -17,9 +17,22 @@ try {
 
 export const db = firestoreInstance;
 export const auth = getAuth(app);
+
 export const googleProvider = new GoogleAuthProvider();
+
 export const metaProvider = new FacebookAuthProvider();
+metaProvider.addScope('email');
+metaProvider.addScope('public_profile');
+metaProvider.setCustomParameters({
+  display: 'popup',
+});
+
 export const appleProvider = new OAuthProvider('apple.com');
+appleProvider.addScope('email');
+appleProvider.addScope('name');
+appleProvider.setCustomParameters({
+  locale: 'he',
+});
 
 export async function testConnection() {
   try {

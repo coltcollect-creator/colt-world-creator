@@ -6,6 +6,7 @@ import { useLivePositions } from "@/hooks/use-live-positions";
 import { trackQuestAction } from "@/lib/quest-events";
 import { db } from "@/lib/firebase";
 import { collection, doc, setDoc, deleteDoc, query, where, onSnapshot } from "firebase/firestore";
+import { renderAnimatedMapBackground } from "@/lib/map-backgrounds";
 
 // Pre-cached starter characters with full asset URLs
 const STARTER_CHARACTER_SPRITES: Record<string, { right: string; left: string | null; jump: string | null; idle: string }> = {
@@ -101,6 +102,8 @@ type Props = {
   npcs: NpcRef[];
   isPublicRoom?: boolean;
   backgroundColor?: string | null;
+  backgroundTheme?: string | null;
+  backgroundUrl?: string | null;
   touchInputRef?: MutableRefObject<{ x: number; jump: boolean }>;
   onInteract?: (kind: "store" | "npc" | "door" | "treasure", id: string, extra?: { targetMapId?: string }) => void;
   onNearby?: (n: Nearby) => void;
@@ -160,6 +163,8 @@ export function GameViewport({
   npcs,
   isPublicRoom = false,
   backgroundColor,
+  backgroundTheme = "classic_sky",
+  backgroundUrl,
   touchInputRef,
   onInteract,
   onNearby,
@@ -422,10 +427,10 @@ export function GameViewport({
       // High-frequency realtime broadcast (~16/sec) so others see smooth motion
       liveRef.current.send(s.x, s.y, s.facing === -1 ? "left" : "right", s.vx !== 0 || !s.onGround);
       
-      // Realtime multiplayer sync to Firestore: immediate on start, throttled to 250ms when moving, 2500ms when stationary
+      // Realtime multiplayer sync to memory store + throttled Firestore sync (every 15s to save quota)
       if (user && mapId) {
         const isMoving = s.vx !== 0 || !s.onGround;
-        const interval = isMoving ? 250 : 2500;
+        const interval = 15000;
         if (s.lastSave === 0 || t - s.lastSave > interval) {
           s.lastSave = t;
           const currentUsername = profile?.display_name || profile?.username || user?.user_metadata?.username || "Player";
@@ -442,37 +447,34 @@ export function GameViewport({
             moving: isMoving,
             last_seen: new Date().toISOString(),
           };
-          setDoc(doc(db, "active_players", user.id), cleanForFirestore(posData), { merge: true }).catch(() => {});
+          setDoc(doc(db, "active_players", user.id), cleanForFirestore(posData), { merge: true }).catch((err) => {
+            // Gracefully ignore Firestore quota errors
+            if (err?.code !== "resource-exhausted") {
+              console.warn("Player presence sync notice:", err);
+            }
+          });
           supabase.from("profiles").update({ last_x: s.x, last_y: s.y, current_map_id: mapId }).eq("id", user.id).then(() => {});
         }
       }
 
       // Draw
       ctx.clearRect(0, 0, viewportWidth, viewportHeight);
-      // Sky
-      const g = ctx.createLinearGradient(0, 0, 0, viewportHeight);
-      if (backgroundColor) {
-        g.addColorStop(0, backgroundColor); g.addColorStop(1, shade(backgroundColor, -14));
-      } else {
-        g.addColorStop(0, "#ffd1ec"); g.addColorStop(0.55, "#c6e9ff"); g.addColorStop(1, "#fff2c2");
-      }
 
-      ctx.fillStyle = g; ctx.fillRect(0, 0, viewportWidth, viewportHeight);
-      // Distant hills
-      ctx.fillStyle = "rgba(255,255,255,0.55)";
-      for (let i = 0; i < 5; i++) {
-        const hx = ((i * 480 - s.camX * 0.25) % (width + 480));
-        ctx.beginPath();
-        ctx.ellipse(hx, viewportHeight - 90, 260, 90, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // Clouds
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      for (let i = 0; i < 6; i++) {
-        const cx = ((i * 360 - s.camX * 0.4) % (width + 360));
-        ctx.beginPath(); ctx.arc(cx, 70 + (i % 2) * 40, 34, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(cx + 28, 82 + (i % 2) * 40, 24, 0, Math.PI * 2); ctx.fill();
-      }
+      // Render Dynamic Animated Background (Classic Sky with 19:00 Day/Night Cycle, Pastel Town, or Endless Ocean)
+      renderAnimatedMapBackground({
+        ctx,
+        viewportWidth,
+        viewportHeight,
+        worldWidth: width,
+        worldHeight: height,
+        camX: s.camX,
+        camY: s.camY,
+        theme: backgroundTheme,
+        customBgColor: backgroundColor,
+        customBgUrl: backgroundUrl,
+        time: t,
+      });
+
       ctx.save();
       ctx.translate(-s.camX, -s.camY);
       // Decor (background layer)

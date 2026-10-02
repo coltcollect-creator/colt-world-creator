@@ -19,24 +19,49 @@ export function QuestCompletionToast() {
     if (!user) return;
 
     const notify = async (row: { id: string; quest_id: string; progress: number; completed_at: string | null; claimed_at: string | null }) => {
-      const { data: q } = await supabase.from("quests").select("name, credit_reward, xp_reward, target_amount").eq("id", row.quest_id).maybeSingle();
+      const { data: q } = await supabase
+        .from("quests")
+        .select("name, credit_reward, xp_reward, target_amount, icon_url, cosmetic_reward, title_reward, metadata")
+        .eq("id", row.quest_id)
+        .maybeSingle();
       if (!q) return;
+
+      const credits = Number(q.credit_reward) || 0;
+      const xp = Number(q.xp_reward) || 0;
+      const hasCard = Boolean(q.icon_url || q.cosmetic_reward || (q.metadata as any)?.has_card || (q.metadata as any)?.card_image_url);
+
       if (row.completed_at && !row.claimed_at && !seenCompleted.current.has(row.id)) {
         seenCompleted.current.add(row.id);
         confetti({ particleCount: 80, spread: 70, origin: { x: 0.85, y: 0.2 }, colors: ["#f472b6", "#a78bfa", "#38bdf8", "#facc15"] });
-        toast.success(`🎉 השלמת משימה: ${q.name}`, {
-          description: `לחצו על טאב המשימות לקבלת ${q.credit_reward} 💎 + ${q.xp_reward} XP`,
-          duration: 6000,
+
+        const rewardItems: string[] = [];
+        if (credits > 0) rewardItems.push(`${credits} 💎`);
+        if (xp > 0) rewardItems.push(`${xp} XP`);
+        if (hasCard) rewardItems.push("🃏 קלף לאלבום");
+
+        const rewardSummary = rewardItems.length > 0 ? ` (${rewardItems.join(" + ")})` : "";
+
+        toast.success(`🎉 השלמת משימה: ${q.name}!`, {
+          description: `🎁 יש פרס לאיסוף (Reward to claim)! היכנסו למרכז המשימות לאיסוף${rewardSummary}`,
+          duration: 7000,
         });
       }
+
       if (row.claimed_at && !seenClaimed.current.has(row.id)) {
         seenClaimed.current.add(row.id);
         confetti({ particleCount: 120, spread: 100, origin: { x: 0.85, y: 0.2 }, colors: ["#fde047", "#f59e0b", "#ec4899"] });
-        toast.success(`💎 +${q.credit_reward} קרדיטים!`, {
-          description: `פרס עבור: ${q.name}`,
+
+        const claimedItems: string[] = [];
+        if (credits > 0) claimedItems.push(`+${credits} ג'מים 💎`);
+        if (xp > 0) claimedItems.push(`+${xp} XP ⭐`);
+        if (hasCard) claimedItems.push(`🃏 קלף נוסף לאלבום!`);
+
+        toast.success(`✨ הפרס נאסף בהצלחה!`, {
+          description: claimedItems.length > 0 ? claimedItems.join(" · ") : `השלמת את ${q.name}`,
           duration: 5000,
         });
         qc.invalidateQueries({ queryKey: ["profile"] });
+        qc.invalidateQueries({ queryKey: ["my-quests"] });
       }
     };
 

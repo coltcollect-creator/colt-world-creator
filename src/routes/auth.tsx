@@ -17,8 +17,18 @@ function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const [providerGuide, setProviderGuide] = useState<"facebook" | "apple" | null>(null);
+  const [copiedUri, setCopiedUri] = useState(false);
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+
+  const redirectUri = "https://gen-lang-client-0990466400.firebaseapp.com/__/auth/handler";
+
+  const copyRedirectUri = () => {
+    navigator.clipboard.writeText(redirectUri);
+    setCopiedUri(true);
+    toast.success("הכתובת הועתקה ללוח!");
+    setTimeout(() => setCopiedUri(false), 2500);
+  };
 
   useEffect(() => {
     if (!loading && user) {
@@ -34,12 +44,20 @@ function AuthPage() {
       const res = await supabase.auth.signInWithOAuth({ provider });
       if (res.error) {
         const errMsg = String(res.error.message || "");
+        const errCode = (res.error as any).code || "";
         const isNotAllowed =
           errMsg.includes("operation-not-allowed") ||
-          (res.error as any).code === "auth/operation-not-allowed";
+          errMsg.includes("configuration-not-found") ||
+          errCode === "auth/operation-not-allowed" ||
+          errCode === "auth/configuration-not-found" ||
+          errCode === "auth/unauthorized-domain";
 
-        if (res.error.code === "auth/popup-closed-by-user") {
-          toast.info("ההתחברות בוטלה");
+        if (errCode === "auth/popup-closed-by-user") {
+          toast.info("ההתחברות בוטלה על ידך");
+        } else if (errCode === "auth/popup-blocked") {
+          toast.error("הדפדפן חסם את חלון ההתחברות הקופץ. אנא אפשרו חלונות קופצים (Popups) ונסו שוב.");
+        } else if (errCode === "auth/account-exists-with-different-credential") {
+          toast.error("קיים כבר חשבון עם אותה כתובת אימייל אך בספק אחר (למשל Google). התחברו דרכו.");
         } else if (isNotAllowed && (provider === "facebook" || provider === "apple")) {
           setProviderGuide(provider);
         } else {
@@ -52,7 +70,7 @@ function AuthPage() {
       }
     } catch (err) {
       const msg = (err as Error).message || "";
-      if (msg.includes("operation-not-allowed")) {
+      if (msg.includes("operation-not-allowed") || msg.includes("configuration-not-found")) {
         setProviderGuide(provider === "google" ? null : provider);
       } else {
         toast.error(msg);
@@ -150,13 +168,13 @@ function AuthPage() {
 
         {/* Modal Guide when provider is unauthorized in Firebase Console */}
         {providerGuide && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="chrome-panel w-full max-w-md p-6 space-y-4 shadow-2xl border-2 border-primary">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="chrome-panel w-full max-w-lg p-6 space-y-4 shadow-2xl border-2 border-primary max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <div className="flex items-center gap-2">
                   <span className="text-2xl">{providerGuide === "facebook" ? "📘" : "🍏"}</span>
                   <h3 className="font-bold text-base">
-                    הגדרת ספק {providerGuide === "facebook" ? "Meta / Facebook" : "Apple ID"}
+                    הגדרת התחברות עם {providerGuide === "facebook" ? "Meta / Facebook" : "Apple ID"}
                   </h3>
                 </div>
                 <button
@@ -168,40 +186,123 @@ function AuthPage() {
                 </button>
               </div>
 
+              {/* Selector tabs between Meta and Apple */}
+              <div className="flex rounded-xl bg-muted/60 p-1 border border-border">
+                <button
+                  type="button"
+                  onClick={() => setProviderGuide("facebook")}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    providerGuide === "facebook" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  📘 מדריך Meta (Facebook)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProviderGuide("apple")}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    providerGuide === "apple" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  🍏 מדריך Apple ID
+                </button>
+              </div>
+
               <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
-                <p className="font-bold mb-1">הספק דורש הפעלה ב-Firebase Console</p>
+                <p className="font-bold mb-1">
+                  {providerGuide === "facebook"
+                    ? "מדוע נדרשת הגדרה ב-Firebase Console & Meta Developers?"
+                    : "מדוע נדרשת הגדרה ב-Firebase Console & Apple Developer?"}
+                </p>
                 <p>
-                  כדי שמשתמשים יוכלו להתחבר עם חשבון {providerGuide === "facebook" ? "Facebook / Meta" : "Apple"} האישי שלהם, יש להזין את מפתחות המפתח שלכם (App ID / Secret) בקונסולת Firebase של הפרויקט.
+                  כדי שמשתמשים יוכלו להתחבר עם חשבון {providerGuide === "facebook" ? "Meta / Facebook" : "Apple"} האישי שלהם, יש להפעיל את הספק ב-Firebase Console ולהזין את מפתחות האפליקציה (App ID / Secret).
                 </p>
               </div>
 
-              <div className="space-y-2 text-xs">
-                <p className="font-bold text-foreground">הוראות הפעלה למנהל המערכת:</p>
-                <ol className="list-decimal list-inside space-y-1.5 text-muted-foreground bg-muted/50 p-3 rounded-xl">
-                  <li>היכנסו אל <strong>Firebase Console</strong> בפרויקט</li>
-                  <li>עברו אל <strong>Authentication &gt; Sign-in method</strong></li>
-                  <li>לחצו על <strong>{providerGuide === "facebook" ? "Facebook" : "Apple"}</strong> והפעילו (Enable)</li>
-                  <li>הזינו את ה-App ID וה-Secret מחשבון המפתחים שלכם ולחצו Save</li>
-                </ol>
+              {/* Copy OAuth Redirect URI Box */}
+              <div className="space-y-1.5 bg-muted/70 p-3 rounded-xl border border-border text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-foreground">כתובת ה-Redirect URI של Firebase (יש להדביק בהגדרות הספק):</span>
+                  <button
+                    type="button"
+                    onClick={copyRedirectUri}
+                    className="text-[11px] px-2 py-0.5 rounded bg-primary text-primary-foreground hover:brightness-110 font-bold"
+                  >
+                    {copiedUri ? "✓ הועתק!" : "📋 העתק כתובת"}
+                  </button>
+                </div>
+                <code className="block break-all bg-background/80 p-2 rounded border border-border text-[11px] font-mono text-primary select-all">
+                  {redirectUri}
+                </code>
               </div>
 
-              <div className="flex items-center justify-between border-t border-border pt-3">
+              {providerGuide === "facebook" ? (
+                <div className="space-y-2 text-xs">
+                  <p className="font-bold text-foreground">שלבי ההגדרה עבור Meta / Facebook:</p>
+                  <ol className="list-decimal list-inside space-y-2 text-muted-foreground bg-muted/40 p-3 rounded-xl">
+                    <li>
+                      היכנסו אל <strong>Meta for Developers</strong> (developers.facebook.com) וצרו אפליקציה חדשה (סוג: Consumer או Business).
+                    </li>
+                    <li>
+                      הוסיפו את מוצר <strong>Facebook Login for Web</strong>.
+                    </li>
+                    <li>
+                      ב-<strong>Settings</strong> של Facebook Login, הדביקו את כתובת ה-<strong>Redirect URI</strong> (המופיעה מעלה) בשדה <em>Valid OAuth Redirect URIs</em> ושמרו.
+                    </li>
+                    <li>
+                      העתיקו את ה-<strong>App ID</strong> ואת ה-<strong>App Secret</strong> מתוך <em>App Settings &gt; Basic</em>.
+                    </li>
+                    <li>
+                      היכנסו אל <strong>Firebase Console</strong> בפרויקט: <code>gen-lang-client-0990466400</code>.
+                    </li>
+                    <li>
+                      עברו ל-<strong>Authentication &gt; Sign-in method</strong> &gt; לחצו על <strong>Facebook</strong> &gt; הפעילו (Enable) &gt; הדביקו את ה-App ID ו-App Secret ושמרו!
+                    </li>
+                  </ol>
+                </div>
+              ) : (
+                <div className="space-y-2 text-xs">
+                  <p className="font-bold text-foreground">שלבי ההגדרה עבור Apple ID:</p>
+                  <ol className="list-decimal list-inside space-y-2 text-muted-foreground bg-muted/40 p-3 rounded-xl">
+                    <li>
+                      היכנסו אל <strong>Apple Developer Portal</strong> (developer.apple.com) &gt; <em>Certificates, Identifiers &amp; Profiles</em>.
+                    </li>
+                    <li>
+                      צרו <strong>Services ID</strong> חדש, הפעילו בו <strong>Sign in with Apple</strong> והגדירו ב-<em>Return URLs</em> את כתובת ה-<strong>Redirect URI</strong> (מעלה).
+                    </li>
+                    <li>
+                      צרו <strong>Key (מפתח)</strong> עבור Sign in with Apple והורידו את קובץ ה-<code>.p8</code> (שימו לב ל-Key ID).
+                    </li>
+                    <li>
+                      היכנסו אל <strong>Firebase Console</strong> בפרויקט <code>gen-lang-client-0990466400</code>.
+                    </li>
+                    <li>
+                      עברו ל-<strong>Authentication &gt; Sign-in method</strong> &gt; לחצו על <strong>Apple</strong> &gt; הפעילו (Enable).
+                    </li>
+                    <li>
+                      הזינו את ה-<strong>Services ID</strong>, <strong>Team ID</strong>, <strong>Key ID</strong> ואת תוכן קובץ המפתח (Private Key) ושמרו!
+                    </li>
+                  </ol>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between border-t border-border pt-3 gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setProviderGuide(null);
                     handleOAuthSignIn("google");
                   }}
-                  className="btn-plastic text-xs px-3 py-1.5"
+                  className="btn-plastic text-xs px-3 py-2 flex-1"
                 >
                   🌐 התחבר בינתיים עם Google
                 </button>
                 <button
                   type="button"
                   onClick={() => setProviderGuide(null)}
-                  className="px-3 py-1.5 rounded-lg text-xs bg-muted hover:bg-muted/80 text-foreground"
+                  className="px-4 py-2 rounded-xl text-xs bg-muted hover:bg-muted/80 text-foreground font-bold"
                 >
-                  סגור
+                  הבנתי, סגור
                 </button>
               </div>
             </div>

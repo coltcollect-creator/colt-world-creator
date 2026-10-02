@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { useI18n, LanguageSwitcher } from "@/lib/i18n";
 import { ImageUpload } from "@/components/owner/ImageUpload";
 import { Map3DEditor } from "@/components/owner/Map3DEditor";
+import { CoolEnvironmentEditor } from "@/components/owner/CoolEnvironmentEditor";
+import { MAP_THEMES, renderAnimatedMapBackground, type MapBackgroundTheme } from "@/lib/map-backgrounds";
 
 
 export const Route = createFileRoute("/owner/map-editor")({ component: MapEditor });
@@ -134,12 +136,21 @@ function MapEditor() {
 
 
   const map = maps.find((m) => m.id === mapId);
-  const is3D = (map as unknown as { dimension?: string } | undefined)?.dimension === "3d";
-  const setDimension = async (dim: "2d" | "3d") => {
+  const currentDim = (map as unknown as { dimension?: string } | undefined)?.dimension || "2d";
+  const is3D = currentDim === "3d";
+  const isCoolEnv = currentDim === "cool_env";
+
+  const setDimension = async (dim: "2d" | "3d" | "cool_env") => {
     if (!mapId) return;
     const { error } = await supabase.from("maps").update({ dimension: dim } as never).eq("id", mapId);
     if (error) { toast.error(error.message); return; }
-    toast.success(dim === "3d" ? "המפה הוגדרה כתלת-מימדית" : "המפה הוגדרה כדו-מימדית");
+    toast.success(
+      dim === "cool_env"
+        ? "המפה הוגדרה כסביבה מגניבה (2.5D עומק)"
+        : dim === "3d"
+        ? "המפה הוגדרה כתלת-מימדית"
+        : "המפה הוגדרה כדו-מימדית"
+    );
     qc.invalidateQueries({ queryKey: ["all-maps"] });
     qc.invalidateQueries({ queryKey: ["active-map"] });
   };
@@ -171,12 +182,26 @@ function MapEditor() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, mapW, mapH);
-    // background
+
+    // Dynamic background theme
+    const bgTheme = (map as unknown as { background_theme?: string | null })?.background_theme || "classic_sky";
     const bg = (map.background_color as string | undefined) || null;
-    const g = ctx.createLinearGradient(0, 0, 0, mapH);
-    if (bg) { g.addColorStop(0, bg); g.addColorStop(1, "#fff2c2"); }
-    else { g.addColorStop(0, "#ffd1ec"); g.addColorStop(0.5, "#c6e9ff"); g.addColorStop(1, "#fff2c2"); }
-    ctx.fillStyle = g; ctx.fillRect(0, 0, mapW, mapH);
+    const bgUrl = (map.background_url as string | undefined) || null;
+
+    renderAnimatedMapBackground({
+      ctx,
+      viewportWidth: mapW,
+      viewportHeight: mapH,
+      worldWidth: mapW,
+      worldHeight: mapH,
+      camX: 0,
+      camY: 0,
+      theme: bgTheme,
+      customBgColor: bg,
+      customBgUrl: bgUrl,
+      time: performance.now(),
+    });
+
     // grid
     ctx.strokeStyle = "rgba(0,0,0,0.06)";
     ctx.lineWidth = 1;
@@ -339,12 +364,13 @@ function MapEditor() {
             {maps.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
           <select
-            value={is3D ? "3d" : "2d"}
-            onChange={(e) => setDimension(e.target.value as "2d" | "3d")}
+            value={currentDim}
+            onChange={(e) => setDimension(e.target.value as "2d" | "3d" | "cool_env")}
             className="rounded-xl border-2 border-border bg-input px-2 py-1 text-xs font-bold"
           >
             <option value="2d">🎬 מפה דו-מימדית (2D)</option>
             <option value="3d">🧊 מפה תלת-מימדית (3D)</option>
+            <option value="cool_env">✨ סביבה מגניבה (2.5D עומק)</option>
           </select>
           <button onClick={publish} className="btn-plastic !px-3 !py-1 text-xs">🚀 פרסום</button>
           <LanguageSwitcher />
@@ -353,7 +379,21 @@ function MapEditor() {
         </div>
       </div>
 
-      {is3D ? (
+      {isCoolEnv ? (
+        map && version ? (
+          <CoolEnvironmentEditor
+            map={map as unknown as Parameters<typeof CoolEnvironmentEditor>[0]["map"]}
+            versionId={version.id}
+            objects={objects as unknown as Parameters<typeof CoolEnvironmentEditor>[0]["objects"]}
+            stores={stores}
+            npcs={npcs}
+            maps={maps as unknown as Array<{ id: string; name: string }>}
+            onPublish={publish}
+          />
+        ) : (
+          <div className="chrome-panel grid flex-1 place-items-center text-sm">{t("common.loading")}</div>
+        )
+      ) : is3D ? (
         map && version ? (
           <Map3DEditor
             map={map as unknown as Parameters<typeof Map3DEditor>[0]["map"]}
@@ -372,10 +412,42 @@ function MapEditor() {
 
         <aside className="space-y-3 h-full overflow-y-auto pr-1">
           <div className="chrome-panel p-3">
-            <label className="mb-1 block text-xs font-bold">מפה</label>
+            <label className="mb-1 block text-xs font-bold">מפה / חדר</label>
             <select value={mapId ?? ""} onChange={(e) => setMapId(e.target.value)} className="w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-sm">
               {maps.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
+          </div>
+
+          {/* Room Background Theme Selector */}
+          <div className="chrome-panel p-3 space-y-2">
+            <label className="block text-xs font-bold text-foreground">
+              🎨 רקע ואווירת החדר
+            </label>
+            <select
+              value={(map as unknown as { background_theme?: string | null })?.background_theme || "classic_sky"}
+              onChange={async (e) => {
+                if (!mapId) return;
+                const newTheme = e.target.value;
+                const { error } = await supabase.from("maps").update({ background_theme: newTheme } as never).eq("id", mapId);
+                if (error) toast.error(error.message);
+                else {
+                  toast.success("רקע החדר עודכן בהצלחה!");
+                  qc.invalidateQueries({ queryKey: ["all-maps"] });
+                  qc.invalidateQueries({ queryKey: ["active-map"] });
+                }
+              }}
+              className="w-full rounded-xl border-2 border-border bg-input px-2.5 py-1.5 text-xs font-bold text-foreground"
+            >
+              {MAP_THEMES.map((th) => (
+                <option key={th.id} value={th.id}>
+                  {th.emoji} {th.name}
+                </option>
+              ))}
+              <option value="custom">🖼️ תמונה/צבע מותאם אישית</option>
+            </select>
+            <p className="text-[10px] text-muted-foreground leading-tight">
+              {(MAP_THEMES.find((th) => th.id === ((map as unknown as { background_theme?: string | null })?.background_theme || "classic_sky"))?.description) || "רקע אינטראקטיבי מלא עם מחזור יום ולילה החל מ-19:00"}
+            </p>
           </div>
 
 

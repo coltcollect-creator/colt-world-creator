@@ -60,7 +60,10 @@ export function DigitalAlbum({
   const ownedMap = useMemo(() => {
     const map = new Map<string, UserCollectedCard>();
     for (const uc of userCards) {
-      map.set(uc.card_id, uc);
+      if (uc.card_id) map.set(uc.card_id, uc);
+      if (uc.card_number != null) map.set(`num-${uc.card_number}`, uc);
+      if (uc.id) map.set(uc.id, uc);
+      if (uc.source_name) map.set(`src-${uc.source_name}`, uc);
     }
     return map;
   }, [userCards]);
@@ -71,8 +74,22 @@ export function DigitalAlbum({
   }, [allCards, selectedRarity]);
 
   const totalCards = allCards.length;
-  const collectedCount = userCards.length;
-  const percentage = totalCards > 0 ? Math.round((collectedCount / totalCards) * 100) : 0;
+
+  // Calculate unique collected cards against totalCards
+  const collectedCount = useMemo(() => {
+    let count = 0;
+    for (const card of allCards) {
+      const isOwned =
+        ownedMap.has(card.id) ||
+        ownedMap.has(`num-${card.card_number}`) ||
+        (card.source_id ? ownedMap.has(`quest-${card.source_id}`) || ownedMap.has(card.source_id) : false) ||
+        (card.source_name ? ownedMap.has(`src-${card.source_name}`) : false);
+      if (isOwned) count++;
+    }
+    return Math.max(count, userCards.length);
+  }, [allCards, ownedMap, userCards]);
+
+  const percentage = totalCards > 0 ? Math.min(100, Math.round((collectedCount / totalCards) * 100)) : 0;
 
   return (
     <div className="space-y-4">
@@ -155,7 +172,11 @@ export function DigitalAlbum({
       {/* Cards Grid Album Binder */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {filteredCards.map((card) => {
-          const collected = ownedMap.get(card.id);
+          const collected =
+            ownedMap.get(card.id) ||
+            ownedMap.get(`num-${card.card_number}`) ||
+            (card.source_id ? ownedMap.get(`quest-${card.source_id}`) || ownedMap.get(card.source_id) : null) ||
+            (card.source_name ? ownedMap.get(`src-${card.source_name}`) : null);
           const isUnlocked = !!collected;
           const conf = RARITY_CONFIG[card.rarity] || RARITY_CONFIG.common;
 

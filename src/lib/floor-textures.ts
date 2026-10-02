@@ -11,45 +11,49 @@ export type FloorType =
   | "carpet"
   | "asphalt"
   | "marble"
+  | "neon"
   | "custom";
 
 export const FLOOR_TYPES: Array<{ key: FloorType; label: string; icon: string }> = [
-  { key: "grass", label: "דשא", icon: "🌱" },
-  { key: "wood", label: "פרקט עץ", icon: "🪵" },
-  { key: "tile", label: "אריחים", icon: "🧱" },
-  { key: "checker", label: "שחמט", icon: "🏁" },
-  { key: "stone", label: "אבן", icon: "🪨" },
-  { key: "sand", label: "חול", icon: "🏖️" },
-  { key: "carpet", label: "שטיח", icon: "🟥" },
-  { key: "asphalt", label: "אספלט", icon: "🛣️" },
-  { key: "marble", label: "שיש", icon: "⬜" },
-  { key: "custom", label: "תמונה מותאמת", icon: "🖼️" },
+  { key: "wood", label: "פרקט עץ יוקרתי", icon: "🪵" },
+  { key: "tile", label: "אריחי קרמיקה", icon: "🧱" },
+  { key: "marble", label: "שיש מבריק", icon: "⬜" },
+  { key: "checker", label: "משבצות שחמט", icon: "🏁" },
+  { key: "neon", label: "סייבר ניאון זוהר", icon: "💜" },
+  { key: "stone", label: "אבני מדרכת כנס", icon: "🪨" },
+  { key: "carpet", label: "שטיח כנסים אדום", icon: "🟥" },
+  { key: "grass", label: "דשא טבעי", icon: "🌱" },
+  { key: "sand", label: "חול בהיר", icon: "🏖️" },
+  { key: "asphalt", label: "אספלט עירוני", icon: "🛣️" },
+  { key: "custom", label: "תמונה מותאמת אישית", icon: "🖼️" },
 ];
 
 export const FLOOR_BASE_COLOR: Record<FloorType, string> = {
-  grass: "#7dd3a0",
-  wood: "#c08552",
-  tile: "#e6eef5",
+  wood: "#b47a46",
+  tile: "#e2e8f0",
+  marble: "#f8fafc",
   checker: "#f1f5f9",
-  stone: "#9aa3ab",
-  sand: "#f0d9a7",
-  carpet: "#b3455a",
-  asphalt: "#4b5563",
-  marble: "#f5f5f7",
+  neon: "#0f172a",
+  stone: "#94a3b8",
+  carpet: "#991b1b",
+  grass: "#4ade80",
+  sand: "#fde047",
+  asphalt: "#334155",
   custom: "#ffffff",
 };
 
 /** World size (in map units) covered by one texture tile. */
 export const FLOOR_TILE_SIZE: Record<FloorType, number> = {
-  grass: 400,
   wood: 320,
   tile: 240,
+  marble: 480,
   checker: 240,
-  stone: 300,
-  sand: 420,
-  carpet: 360,
-  asphalt: 380,
-  marble: 500,
+  neon: 300,
+  stone: 320,
+  carpet: 320,
+  grass: 400,
+  sand: 400,
+  asphalt: 360,
   custom: 600,
 };
 
@@ -138,6 +142,27 @@ export function makeFloorCanvas(type: FloorType, colorOverride?: string | null):
     for (let i = 0; i < 1800; i++) {
       shade(ctx, Math.random() > 0.5 ? "#ffffff" : "#000000", 0.06, Math.random() * S, Math.random() * S, 2, 2);
     }
+  } else if (type === "neon") {
+    // Cyberpunk neon grid tile
+    ctx.fillStyle = "#090d16";
+    ctx.fillRect(0, 0, S, S);
+    // Dark metallic panel
+    ctx.fillStyle = "#111827";
+    ctx.fillRect(4, 4, S - 8, S - 8);
+    // Outer neon glow border
+    ctx.strokeStyle = "#8b5cf6";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, S - 2, S - 2);
+    // Inner cyan cyber lines
+    ctx.strokeStyle = "#06b6d4";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(6, 6, S - 12, S - 12);
+    // Corner accent dots
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillRect(7, 7, 5, 5);
+    ctx.fillRect(S - 12, 7, 5, 5);
+    ctx.fillRect(7, S - 12, 5, 5);
+    ctx.fillRect(S - 12, S - 12, 5, 5);
   }
   return c;
 }

@@ -12,7 +12,7 @@ import {
 import { DigitalAlbum } from "@/components/album/DigitalAlbum";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sparkles, Trophy, ShoppingBag, Shirt, Diamond, Star, Award, Shield } from "lucide-react";
-import { getLevelProgress } from "@/lib/progression";
+import { getLevelProgress, getLevelMilestones, type LevelMilestone } from "@/lib/progression";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   component: ProfilePage,
@@ -32,6 +32,46 @@ function ProfilePage() {
   const [allCards, setAllCards] = useState<AlbumCard[]>([]);
   const [userCards, setUserCards] = useState<UserCollectedCard[]>([]);
   const [loadingAlbum, setLoadingAlbum] = useState(true);
+  const [levelMilestones, setLevelMilestones] = useState<LevelMilestone[]>(() => getLevelMilestones());
+
+  // Fetch live level milestones from DB
+  const { data: dbLevels } = useQuery({
+    queryKey: ["game-levels-progression"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("game_settings")
+        .select("level_rewards")
+        .eq("id", 1)
+        .maybeSingle();
+      if (data?.level_rewards && Array.isArray(data.level_rewards) && data.level_rewards.length > 0) {
+        return (data.level_rewards as LevelMilestone[]).sort((a, b) => a.level - b.level);
+      }
+      return getLevelMilestones();
+    },
+    staleTime: 10_000,
+  });
+
+  useEffect(() => {
+    if (dbLevels && dbLevels.length > 0) {
+      setLevelMilestones(dbLevels);
+    }
+  }, [dbLevels]);
+
+  // Listen to dynamic level milestones updates
+  useEffect(() => {
+    const handleLevels = (e?: Event) => {
+      const custom = (e as CustomEvent)?.detail;
+      if (Array.isArray(custom) && custom.length > 0) {
+        setLevelMilestones(custom);
+      } else {
+        setLevelMilestones(getLevelMilestones());
+      }
+    };
+    window.addEventListener("colt-levels-updated", handleLevels);
+    return () => {
+      window.removeEventListener("colt-levels-updated", handleLevels);
+    };
+  }, []);
 
   // Load all available album cards definition
   useEffect(() => {
@@ -149,7 +189,7 @@ function ProfilePage() {
 
       {/* XP Level Progress Card */}
       {(() => {
-        const prog = getLevelProgress(profile.xp || 0);
+        const prog = getLevelProgress(profile.xp || 0, levelMilestones);
         return (
           <div className="chrome-panel rounded-3xl p-4 sm:p-5 bg-card/90 border border-primary/25 shadow-lg">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">

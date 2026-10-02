@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { TourButton } from "@/lib/tour";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallModal";
+import { BackgroundMusicPlayer } from "@/components/audio/BackgroundMusicPlayer";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -220,6 +221,9 @@ function AuthedLayout() {
       <main data-tour="page" className="mx-3 mt-3 pb-6">
         <Outlet />
       </main>
+
+      {/* Global Background Music Playlist Player */}
+      <BackgroundMusicPlayer />
     </div>
   );
 }

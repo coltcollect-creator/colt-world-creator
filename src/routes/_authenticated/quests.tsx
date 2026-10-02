@@ -79,14 +79,18 @@ function Quests() {
       if (user) {
         const quest = quests.find((q) => q.id === vars.id);
         const meta = (quest?.metadata as Record<string, unknown> | null) || null;
-        if (meta && meta.has_card) {
+        const cardImg = quest?.icon_url || quest?.image_url || (meta?.card_image_url as string);
+        const cardTitle = quest?.cosmetic_reward || (meta?.card_title as string) || quest?.name;
+        const cardNum = Number(quest?.title_reward) || Number(meta?.card_number) || 3;
+
+        if (cardImg || quest?.cosmetic_reward || meta?.has_card) {
           await unlockCardForUser(user.id, {
             card_id: `quest-${vars.id}`,
-            card_number: Number(meta.card_number) || 3,
-            title: String(meta.card_title || quest?.name || "משימת כנס"),
-            image_url: String(meta.card_image_url || "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=600&auto=format&fit=crop&q=80"),
-            description: String(meta.card_description || quest?.description || "הושלם במרכז המשימות"),
-            rarity: (meta.card_rarity as CardRarity) || "common",
+            card_number: cardNum,
+            title: String(cardTitle || "משימת כנס"),
+            image_url: String(cardImg || "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=600&auto=format&fit=crop&q=80"),
+            description: String(quest?.description || "הושלם במרכז המשימות"),
+            rarity: (meta?.card_rarity as CardRarity) || "rare",
             source_type: "quest",
             source_name: quest?.name || "משימת כנס",
           }).catch(console.warn);

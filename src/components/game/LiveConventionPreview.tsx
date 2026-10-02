@@ -7,6 +7,7 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { PLAYER_W, PLAYER_H, cosmeticRect, sortLayers } from "@/lib/avatar-layout";
 import { Users, Eye, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { renderAnimatedMapBackground } from "@/lib/map-backgrounds";
 
 export type MapObject = {
   id: string;
@@ -150,23 +151,12 @@ export function LiveConventionPreview() {
         .from("map_versions")
         .select("*")
         .eq("map_id", activeMapId)
-        .eq("status", "published")
         .order("version_number", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
-      let ver = version;
-      if (!ver) {
-        const { data: anyVer } = await supabase
-          .from("map_versions")
-          .select("*")
-          .eq("map_id", activeMapId)
-          .order("version_number", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        ver = anyVer;
-      }
-
-      const verId = ver?.id || "34e2d77d-a542-4f2b-9425-cfe269c18636";
+      const verId = version?.id || "34e2d77d-a542-4f2b-9425-cfe269c18636";
       const { data: objs } = await supabase.from("map_objects").select("*").eq("map_version_id", verId);
 
       const fallbackObjects: MapObject[] = [
@@ -373,33 +363,25 @@ export function LiveConventionPreview() {
       const camLeft = Math.max(0, Math.min(mapWidth - vw / zoom, cam.x - halfVw));
       const camTop = Math.max(0, Math.min(mapHeight - vh / zoom, cam.y - halfVh));
 
+      const t = performance.now();
+
       ctx.save();
       ctx.clearRect(0, 0, vw, vh);
 
-      // Sky Background
-      const bgCol = currentMap.background_color || "#c8ecff";
-      const g = ctx.createLinearGradient(0, 0, 0, vh);
-      g.addColorStop(0, bgCol);
-      g.addColorStop(1, shade(bgCol, -14));
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, vw, vh);
-
-      // Distant parallax hills
-      ctx.fillStyle = "rgba(255,255,255,0.45)";
-      for (let i = 0; i < 8; i++) {
-        const hx = ((i * 480 - camLeft * 0.2) % (mapWidth + 480));
-        ctx.beginPath();
-        ctx.ellipse(hx, vh - 60, 260, 80, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Clouds
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      for (let i = 0; i < 8; i++) {
-        const cx = ((i * 360 - camLeft * 0.35) % (mapWidth + 360));
-        ctx.beginPath(); ctx.arc(cx, 60 + (i % 2) * 30, 30, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(cx + 24, 70 + (i % 2) * 30, 20, 0, Math.PI * 2); ctx.fill();
-      }
+      // Dynamic Animated Sky / Theme Background
+      renderAnimatedMapBackground({
+        ctx,
+        viewportWidth: vw,
+        viewportHeight: vh,
+        worldWidth: mapWidth,
+        worldHeight: mapHeight,
+        camX: camLeft,
+        camY: camTop,
+        theme: (currentMap as unknown as { background_theme?: string })?.background_theme || "classic_sky",
+        customBgColor: currentMap.background_color,
+        customBgUrl: currentMap.background_url,
+        time: t,
+      });
 
       // Apply zoom & camera translate
       ctx.scale(zoom, zoom);

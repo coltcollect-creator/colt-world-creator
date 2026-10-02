@@ -919,25 +919,66 @@ export const supabase = {
       if (funcName === "claim_quest_reward") {
         const questId = params._quest_id;
         const qData = gameDataStore.getById("quests", questId);
-        const creditReward = Number(qData?.credit_reward || qData?.gems_reward || 50);
-        const xpReward = Number(qData?.xp_reward || 20);
+        const creditReward = Number(qData?.credit_reward ?? qData?.gems_reward ?? 0);
+        const xpReward = Number(qData?.xp_reward ?? 0);
 
         const prof = gameDataStore.getById("profiles", activeUser.id) || { credits: 500, xp: 0, level: 1 };
-        const newCredits = (prof.credits || 0) + creditReward;
-        gameDataStore.updateRow("profiles", activeUser.id, { credits: newCredits });
+        if (creditReward > 0) {
+          const newCredits = (prof.credits || 0) + creditReward;
+          gameDataStore.updateRow("profiles", activeUser.id, { credits: newCredits });
+          
+          gameDataStore.upsertRow("credit_transactions", {
+            id: `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            user_id: activeUser.id,
+            amount: creditReward,
+            balance_before: prof.credits || 0,
+            balance_after: newCredits,
+            transaction_type: "quest_reward",
+            description: `פרס משימה: ${qData?.name || "משימה הושלמה"}`,
+          });
+        }
 
-        // Add XP and trigger level up logic, rewards and events
-        await addPlayerXp(activeUser.id, xpReward, `פרס משימה: ${qData?.name || "משימה"}`);
+        if (xpReward > 0) {
+          await addPlayerXp(activeUser.id, xpReward, `פרס משימה: ${qData?.name || "משימה"}`);
+        }
 
+        const existingPq = gameDataStore.getById("player_quests", `${activeUser.id}_${questId}`);
         gameDataStore.upsertRow("player_quests", {
           id: `${activeUser.id}_${questId}`,
           user_id: activeUser.id,
           quest_id: questId,
+          progress: existingPq?.progress || qData?.target_amount || 1,
+          completed_at: existingPq?.completed_at || new Date().toISOString(),
           claimed_at: new Date().toISOString(),
         });
 
+        // Unlock album card if defined
+        const cardImg = qData?.icon_url || qData?.image_url || (qData?.metadata as any)?.card_image_url;
+        const cardTitle = qData?.cosmetic_reward || (qData?.metadata as any)?.card_title || qData?.name;
+        const cardNum = Number(qData?.title_reward) || Number((qData?.metadata as any)?.card_number) || 3;
+
+        if (cardImg || qData?.cosmetic_reward || (qData?.metadata as any)?.has_card) {
+          const cardId = `quest-${questId}`;
+          const cardPayload = {
+            id: `${activeUser.id}_${cardId}`,
+            user_id: activeUser.id,
+            card_id: cardId,
+            card_number: cardNum,
+            card_title: cardTitle || qData?.name || "משימת כנס",
+            card_image_url: cardImg || "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=600&auto=format&fit=crop&q=80",
+            card_description: qData?.description || "משימת כנס",
+            card_rarity: (qData?.metadata as any)?.card_rarity || "rare",
+            source_type: "quest",
+            source_name: `משימה: ${qData?.name || "משימה"}`,
+            unlocked_at: new Date().toISOString(),
+          };
+          gameDataStore.set("user_cards", cardPayload);
+          setDoc(doc(db, "user_cards", cardPayload.id), cardPayload).catch(() => {});
+        }
+
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("credits-changed"));
+          window.dispatchEvent(new CustomEvent("colt-quest-updated"));
         }
         return { data: { ok: true }, error: null };
       }

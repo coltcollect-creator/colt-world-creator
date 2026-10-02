@@ -26,6 +26,7 @@ import { LevelsBuilderPanel } from "@/components/owner/LevelsBuilderPanel";
 import { addPlayerXp, calculateLevel } from "@/lib/progression";
 import { AuditLogsPanel } from "@/components/owner/AuditLogsPanel";
 import { AlbumManagerPanel } from "@/components/owner/AlbumManagerPanel";
+import { MusicPlaylistPanel } from "@/components/owner/MusicPlaylistPanel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -37,13 +38,14 @@ type Tab =
   | "dashboard" | "messages" | "broadcast" | "maps" | "stores" | "products" | "vendorproducts" | "categories" | "cosmetics" | "characters" | "roles" | "npcs"
   | "wheels" | "mystery" | "auctions" | "liverips" | "treasures" | "clues"
   | "quests" | "album" | "titles" | "levels" | "players" | "users" | "orders" | "transactions" | "packages"
-  | "moderation" | "audit" | "settings";
+  | "moderation" | "music" | "audit" | "settings";
 
 const TABS: { key: Tab; i18n: string; icon: string; fallback?: string }[] = [
   { key: "dashboard", i18n: "owner.tab.dashboard", icon: "📊" },
   { key: "messages", i18n: "owner.tab.messages", icon: "💬" },
   { key: "broadcast", i18n: "owner.tab.broadcast", icon: "📢", fallback: "הודעות מערכת" },
   { key: "maps", i18n: "owner.tab.maps", icon: "🗺️" },
+  { key: "music", i18n: "owner.tab.music", icon: "🎵", fallback: "מוזיקת רקע ורשימת השמעה" },
   { key: "stores", i18n: "owner.tab.stores", icon: "🏪" },
   { key: "products", i18n: "owner.tab.products", icon: "📦" },
   { key: "vendorproducts", i18n: "owner.tab.vendorproducts", icon: "🏪", fallback: "מוצרי ונדורים" },
@@ -82,18 +84,25 @@ type Schema = { table: string; cols: string[]; fields: Field[] };
 const SCHEMAS: Record<string, Schema> = {
   maps: {
     table: "maps",
-    cols: ["name", "slug", "dimension", "width", "height", "is_public_room", "is_active"],
+    cols: ["name", "slug", "dimension", "background_theme", "width", "height", "is_public_room", "is_active"],
     fields: [
-      { key: "name", label: "שם", type: "text" },
+      { key: "name", label: "שם החדר / המפה", type: "text" },
       { key: "slug", label: "מזהה טקסטואלי (slug)", type: "text" },
       { key: "description", label: "תיאור", type: "textarea" },
-      { key: "dimension", label: "סוג מפה (2d = דו-מימד, 3d = תלת-מימד)", type: "select", options: ["2d", "3d"], default: "2d" },
+      {
+        key: "background_theme",
+        label: "סגנון ורקע החדר",
+        type: "select",
+        options: ["classic_sky", "pastel_town", "endless_ocean", "custom"],
+        default: "classic_sky",
+      },
+      { key: "dimension", label: "סוג מפה (2d = דו-מימד, 3d = תלת-מימד, cool_env = סביבה מגניבה 2.5D)", type: "select", options: ["2d", "3d", "cool_env"], default: "2d" },
       { key: "width", label: "רוחב (ציר X)", type: "number", default: 2400 },
       { key: "height", label: "גובה 2D / עומק 3D (ציר Z)", type: "number", default: 760 },
       { key: "viewport_width", label: "רוחב תצוגה", type: "number", default: 1400 },
       { key: "viewport_height", label: "גובה תצוגה", type: "number", default: 760 },
-      { key: "background_url", label: "תמונת רקע", type: "image", folder: "maps" },
-      { key: "background_color", label: "צבע רקע", type: "text", default: "#c8ecff" },
+      { key: "background_url", label: "תמונת רקע מותאמת אישית (כשסגנון = custom)", type: "image", folder: "maps" },
+      { key: "background_color", label: "צבע רקע (אופציונלי)", type: "text", default: "#c8ecff" },
       { key: "floor_type", label: "סוג רצפה (למפות תלת-מימד)", type: "select", options: FLOOR_TYPES.map((f) => f.key), default: "grass" },
       { key: "floor_color", label: "צבע רצפה (אופציונלי)", type: "text" },
       { key: "floor_texture_url", label: "תמונת רצפה מותאמת (כשסוג הרצפה = custom)", type: "image", folder: "floors" },
@@ -317,7 +326,7 @@ function useSortableData<T extends Record<string, unknown>>(items: T[], defaultS
 
 const TAB_GROUPS: { label: string; icon: string; keys: Tab[] }[] = [
   { label: "סקירה", icon: "📊", keys: ["dashboard", "messages", "broadcast"] },
-  { label: "עולם המשחק", icon: "🗺️", keys: ["maps", "stores", "npcs", "characters", "roles", "cosmetics"] },
+  { label: "עולם המשחק", icon: "🗺️", keys: ["maps", "music", "stores", "npcs", "characters", "roles", "cosmetics"] },
   { label: "חנות ומוצרים", icon: "📦", keys: ["products", "vendorproducts", "categories", "packages"] },
   { label: "עמדות ומשחקים", icon: "🎡", keys: ["wheels", "mystery", "auctions", "liverips", "treasures", "clues"] },
   { label: "התקדמות שחקנים", icon: "📜", keys: ["quests", "titles", "levels"] },
@@ -434,6 +443,7 @@ function OwnerConsole() {
       {tab === "messages" && <OwnerMessages />}
       {tab === "broadcast" && <BroadcastPanel />}
       {tab === "maps" && <ManagedTable schema={SCHEMAS.maps} title={t("owner.tab.maps")} />}
+      {tab === "music" && <MusicPlaylistPanel />}
       {tab === "stores" && <ManagedTable schema={SCHEMAS.stores} title={t("owner.tab.stores")} />}
       {tab === "products" && <ProductsPanel />}
       {tab === "vendorproducts" && <VendorProductsPanel />}

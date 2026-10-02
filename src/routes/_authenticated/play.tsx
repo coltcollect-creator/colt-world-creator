@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { GameViewport, type MapObject } from "@/components/game/GameViewport";
 import { Game3DViewport } from "@/components/game/Game3DViewport";
+import { CoolEnvironmentViewport } from "@/components/game/CoolEnvironmentViewport";
 
 import { GlobalChat } from "@/components/chat/GlobalChat";
 import { ActivePlayers } from "@/components/chat/ActivePlayers";
@@ -51,12 +52,18 @@ function PlayPage() {
   const [showChat, setShowChat] = useState(false);
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
 
+  const { data: allMaps = [] } = useQuery({
+    queryKey: ["all-play-maps"],
+    queryFn: async () =>
+      (await supabase.from("maps").select("*").eq("is_archived", false).eq("is_active", true).order("created_at", { ascending: false })).data ?? [],
+  });
+
   const { data: mapBundle } = useQuery({
     queryKey: ["active-map", activeMapId],
     queryFn: async () => {
       const mapQuery = activeMapId
         ? supabase.from("maps").select("*").eq("id", activeMapId).maybeSingle()
-        : supabase.from("maps").select("*").eq("is_active", true).order("created_at", { ascending: true }).limit(1).maybeSingle();
+        : supabase.from("maps").select("*").eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
       const { data: mapRow } = await mapQuery;
       
       const currentMap = mapRow || {
@@ -72,14 +79,16 @@ function PlayPage() {
         background_color: "#c8ecff",
       };
 
-      const { data: version } = await supabase.from("map_versions").select("*").eq("map_id", currentMap.id).eq("status", "published").order("version_number", { ascending: false }).maybeSingle();
-      let ver = version;
-      if (!ver) {
-        const { data: anyVer } = await supabase.from("map_versions").select("*").eq("map_id", currentMap.id).order("version_number", { ascending: false }).limit(1).maybeSingle();
-        ver = anyVer;
-      }
-      
-      const verId = ver?.id || "34e2d77d-a542-4f2b-9425-cfe269c18636";
+      const { data: version } = await supabase
+        .from("map_versions")
+        .select("*")
+        .eq("map_id", currentMap.id)
+        .order("version_number", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const verId = version?.id || "34e2d77d-a542-4f2b-9425-cfe269c18636";
       const { data: objs } = await supabase.from("map_objects").select("*").eq("map_version_id", verId);
       
       const isMainLobby = currentMap.id === "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9" || currentMap.slug === "main-lobby";
@@ -220,7 +229,11 @@ function PlayPage() {
   const mapWidth = mapBundle?.map.width ?? 2400;
   const mapHeight = mapBundle?.map.height ?? 720;
   const bgColor = (mapBundle?.map as { background_color?: string | null } | undefined)?.background_color ?? null;
-  const is3D = (mapBundle?.map as { dimension?: string } | undefined)?.dimension === "3d";
+  const bgTheme = (mapBundle?.map as unknown as { background_theme?: string | null } | undefined)?.background_theme ?? "classic_sky";
+  const bgUrl = (mapBundle?.map as { background_url?: string | null } | undefined)?.background_url ?? null;
+  const dimension = (mapBundle?.map as { dimension?: string } | undefined)?.dimension || "2d";
+  const is3D = dimension === "3d";
+  const isCoolEnv = dimension === "cool_env";
   const touchInputRef = useRef({ x: 0, y: 0, jump: false });
 
 
@@ -229,9 +242,53 @@ function PlayPage() {
       <QuestProgressToast />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_260px]">
         <div>
+          {allMaps.length > 1 && (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-900/90 backdrop-blur-md p-2.5 border border-white/10 text-white text-xs shadow-lg">
+              <div className="flex items-center gap-2 font-bold">
+                <span className="text-sm">🗺️ בחר חלל / מפה:</span>
+                <select
+                  value={activeMapId || mapBundle?.map?.id || ""}
+                  onChange={(e) => setActiveMapId(e.target.value)}
+                  className="rounded-xl border border-white/20 bg-slate-800 px-3 py-1.5 font-bold text-white shadow-inner focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+                >
+                  {allMaps.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.dimension === "cool_env" ? "✨ 2.5D " : m.dimension === "3d" ? "🧊 3D " : "🎬 2D "}
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-[11px] opacity-80 flex items-center gap-2">
+                <span>📍 מפה פעילה: <strong>{mapBundle?.map?.name}</strong></span>
+              </div>
+            </div>
+          )}
+
           <div data-tour="game-viewport" className="relative">
             {mapBundle?.map ? (
-              is3D ? (
+              isCoolEnv ? (
+                <CoolEnvironmentViewport
+                  width={mapWidth}
+                  height={mapHeight}
+                  viewportWidth={isMobile ? 720 : 1400}
+                  viewportHeight={isMobile ? 900 : 760}
+                  mapId={mapBundle.map.id}
+                  objects={mapBundle.objects}
+                  stores={stores}
+                  npcs={npcs}
+                  isPublicRoom={(mapBundle.map as { is_public_room?: boolean }).is_public_room !== false}
+                  backgroundColor={bgColor}
+                  backgroundTheme={bgTheme}
+                  floorType={(mapBundle.map as unknown as { floor_type?: string | null }).floor_type ?? "wood"}
+                  floorColor={(mapBundle.map as unknown as { floor_color?: string | null }).floor_color ?? null}
+                  floorTextureUrl={(mapBundle.map as unknown as { floor_texture_url?: string | null }).floor_texture_url ?? null}
+                  touchInputRef={touchInputRef}
+                  onInteract={openInteraction}
+                  onNearby={setNearby}
+                  onInspectPlayer={setInspectedPlayer}
+                />
+              ) : is3D ? (
                 <Game3DViewport
                   width={mapWidth}
                   height={mapHeight}
@@ -263,6 +320,8 @@ function PlayPage() {
                 npcs={npcs}
                 isPublicRoom={(mapBundle.map as { is_public_room?: boolean }).is_public_room !== false}
                 backgroundColor={bgColor}
+                backgroundTheme={bgTheme}
+                backgroundUrl={bgUrl}
                 touchInputRef={touchInputRef}
                 onInteract={openInteraction}
                 onNearby={setNearby}
