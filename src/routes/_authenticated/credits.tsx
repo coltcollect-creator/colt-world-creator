@@ -1,9 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { createGemPurchase } from "@/lib/gem-purchase.functions";
+import { initiateGemPurchase } from "@/lib/gem-purchase.functions";
 import { toast } from "sonner";
 import { useI18n } from "@/lib/i18n";
 
@@ -12,7 +11,6 @@ export const Route = createFileRoute("/_authenticated/credits")({ component: Cre
 function CreditsShop() {
   const { t } = useI18n();
   const [busy, setBusy] = useState<string | null>(null);
-  const create = useServerFn(createGemPurchase);
   const { data: packs = [] } = useQuery({
     queryKey: ["packs"],
     queryFn: async () =>
@@ -22,14 +20,12 @@ function CreditsShop() {
   async function buy(id: string) {
     try {
       setBusy(id);
-      const res = await create({ data: { package_id: id, return_origin: window.location.origin } });
-      // Open PayPal in a new tab and navigate this tab to the waiting screen
-      window.open(res.paypal_url, "_blank", "noopener,noreferrer");
-      window.location.href = `/payment/success?order=${res.order_id}`;
+      const res = await initiateGemPurchase(id);
+      // Directly redirect to PayPal checkout
+      window.location.href = res.paypal_url;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(msg);
-    } finally {
       setBusy(null);
     }
   }

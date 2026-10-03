@@ -4,8 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import { useAuth } from "@/lib/auth-context";
-import { useServerFn } from "@tanstack/react-start";
-import { createGemPurchase } from "@/lib/gem-purchase.functions";
+import { initiateGemPurchase } from "@/lib/gem-purchase.functions";
 
 type Auction = {
   id: string;
@@ -271,7 +270,6 @@ function AuctionRoom({ auction, onClose }: { auction: Auction; onClose: () => vo
 }
 
 export function GemPacksPrompt({ needed, balance, onClose }: { needed: number; balance: number; onClose: () => void }) {
-  const create = useServerFn(createGemPurchase);
   const [busy, setBusy] = useState<string | null>(null);
   const { data: packs = [] } = useQuery({
     queryKey: ["packs"],
@@ -281,12 +279,10 @@ export function GemPacksPrompt({ needed, balance, onClose }: { needed: number; b
   const buy = async (id: string) => {
     try {
       setBusy(id);
-      const res = await create({ data: { package_id: id, return_origin: window.location.origin } });
-      window.open(res.paypal_url, "_blank", "noopener,noreferrer");
-      window.location.href = `/payment/success?order=${res.order_id}`;
+      const res = await initiateGemPurchase(id);
+      window.location.href = res.paypal_url;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
-    } finally {
       setBusy(null);
     }
   };
