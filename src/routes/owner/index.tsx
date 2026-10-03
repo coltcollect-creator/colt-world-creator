@@ -2757,6 +2757,7 @@ function PackagesPanel() {
   const [amountIls, setAmountIls] = useState<number>(20);
   const [featured, setFeatured] = useState(false);
   const [order, setOrder] = useState<number>(0);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const gems = Math.max(0, Math.round(ratio * amountIls));
   const perCredit = gems > 0 ? amountIls / gems : 0;
@@ -2796,9 +2797,10 @@ function PackagesPanel() {
     qc.invalidateQueries({ queryKey: ["packs"] });
   }
   async function remove(id: string) {
-    if (!confirm("למחוק את החבילה?")) return;
     const { error } = await supabase.from("credit_packages").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
+    toast.success("החבילה נמחקה בהצלחה");
+    setConfirmDeleteId(null);
     qc.invalidateQueries({ queryKey: ["owner_packages"] });
     qc.invalidateQueries({ queryKey: ["packs"] });
   }
@@ -2882,7 +2884,30 @@ function PackagesPanel() {
                       className="chrome-panel px-2 py-1 text-xs">{p.active ? "פעיל" : "כבוי"}</button>
                   </td>
                   <td className="p-2 text-end">
-                    <button onClick={() => remove(p.id)} className="chrome-panel px-2 py-1 text-xs">🗑</button>
+                    {confirmDeleteId === p.id ? (
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => remove(p.id)}
+                          className="rounded bg-destructive px-2 py-1 text-xs text-destructive-foreground hover:opacity-90"
+                        >
+                          אישור
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="chrome-panel px-2 py-1 text-xs"
+                        >
+                          ביטול
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteId(p.id)}
+                        className="chrome-panel px-2 py-1 text-xs hover:text-destructive"
+                        title="מחק חבילה"
+                      >
+                        🗑️
+                      </button>
+                    )}
                   </td>
                 </tr>
               );

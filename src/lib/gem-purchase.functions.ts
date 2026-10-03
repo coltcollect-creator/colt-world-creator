@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 
 const DEFAULT_PAYPAL_EMAIL = "info@astratego.com";
 const DEFAULT_PAYPAL_ENV = "live";
@@ -39,20 +41,48 @@ export const createGemPurchase = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const origin = sanitizeOrigin(data.return_origin) || "https://ais-pre-lwecgyw2izqawzqb72q6uf-372886588343.europe-west2.run.app";
 
-    // Lookup package
+    // Lookup package directly from Firestore or through query
     let pkg: any = null;
-    const { data: directPkg } = await supabase
-      .from("credit_packages")
-      .select("*")
-      .eq("id", data.package_id)
-      .maybeSingle();
 
-    if (directPkg) {
-      pkg = directPkg;
-    } else {
-      // Search all packages
-      const { data: allPacks } = await supabase.from("credit_packages").select("*");
-      pkg = (allPacks || []).find((p: any) => String(p.id) === String(data.package_id));
+    if (db && data.package_id) {
+      try {
+        const snap = await getDoc(doc(db, "credit_packages", data.package_id));
+        if (snap.exists()) {
+          pkg = { id: snap.id, ...snap.data() };
+        }
+      } catch (err) {
+        console.warn("[createGemPurchase] direct getDoc failed:", err);
+      }
+
+      if (!pkg) {
+        try {
+          const snapAll = await getDocs(collection(db, "credit_packages"));
+          for (const d of snapAll.docs) {
+            if (d.id === data.package_id || String(d.id) === String(data.package_id)) {
+              pkg = { id: d.id, ...d.data() };
+              break;
+            }
+          }
+        } catch (err) {
+          console.warn("[createGemPurchase] getDocs failed:", err);
+        }
+      }
+    }
+
+    if (!pkg) {
+      const { data: directPkg } = await supabase
+        .from("credit_packages")
+        .select("*")
+        .eq("id", data.package_id)
+        .maybeSingle();
+
+      if (directPkg) {
+        pkg = directPkg;
+      } else {
+        // Search all packages
+        const { data: allPacks } = await supabase.from("credit_packages").select("*");
+        pkg = (allPacks || []).find((p: any) => String(p.id) === String(data.package_id));
+      }
     }
 
     if (!pkg) {

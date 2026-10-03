@@ -95,6 +95,13 @@ const DICT: Record<string, { he: string; en: string }> = {
   "common.loading": { he: "טוען…", en: "Loading…" },
   "common.yes": { he: "כן", en: "Yes" },
   "common.no": { he: "לא", en: "No" },
+  // credits shop
+  "credits.title": { he: "רכישת קרדיטים", en: "Buy credits" },
+  "credits.hint": {
+    he: "התשלום מבוצע ב־PayPal בכרטיסייה חדשה. לאחר סיום התשלום, הקרדיטים מזוכים אוטומטית.",
+    en: "Payment is processed via PayPal in a new tab. Once completed, credits are added automatically.",
+  },
+  "credits.buy": { he: "רכישה", en: "Purchase" },
 };
 
 type Ctx = {

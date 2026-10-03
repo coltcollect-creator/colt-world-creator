@@ -539,14 +539,22 @@ class QueryBuilder {
 
   private async fetchDocs(): Promise<{ data: any[] | null; count: number; error: Error | null }> {
     try {
-      // Sync from shared Firestore collection if applicable
-      if (typeof window !== "undefined" && SHARED_FIRESTORE_TABLES.has(this.colName)) {
+      // Sync from shared Firestore collection if applicable (both browser and server)
+      if (db && SHARED_FIRESTORE_TABLES.has(this.colName)) {
         const lastFetch = lastFirestoreFetchTime[this.colName] || 0;
         const ttl = this.colName === "active_players" ? 2000 : 4000;
         if (Date.now() - lastFetch > ttl) {
           lastFirestoreFetchTime[this.colName] = Date.now();
           try {
             const snap = await getDocs(collection(db, this.colName));
+            const remoteIds = new Set(snap.docs.map((d) => d.id));
+            // If any item was deleted remotely in Firestore, remove from local store
+            const currentLocal = gameDataStore.getTable(this.colName);
+            for (const loc of currentLocal) {
+              if (loc.id && !remoteIds.has(String(loc.id))) {
+                gameDataStore.deleteRow(this.colName, loc.id);
+              }
+            }
             if (!snap.empty) {
               for (const d of snap.docs) {
                 if (!gameDataStore.isDeleted(this.colName, d.id)) {

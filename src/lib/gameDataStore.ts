@@ -45,6 +45,7 @@ const requiredTables = [
   "music_tracks",
   "album_cards",
   "user_cards",
+  "credit_packages",
 ];
 
 for (const t of requiredTables) {
@@ -136,6 +137,7 @@ function scheduleSave(tableName: string) {
         "music_tracks",
         "album_cards",
         "user_cards",
+        "credit_packages",
       ];
       const payload: Record<string, Row[]> = {};
       for (const t of persistable) {
