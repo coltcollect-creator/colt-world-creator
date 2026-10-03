@@ -28,6 +28,7 @@ type Nearby =
   | { kind: "npc"; id: string; name: string }
   | { kind: "door"; id: string; name: string; targetMapId?: string }
   | { kind: "treasure"; id: string; name: string }
+  | { kind: "screen"; id: string; name: string; text?: string; imageUrl?: string | null }
   | null;
 
 type Props = {
@@ -46,7 +47,7 @@ type Props = {
   floorColor?: string | null;
   floorTextureUrl?: string | null;
   touchInputRef?: MutableRefObject<{ x: number; y?: number; jump: boolean }>;
-  onInteract?: (kind: "store" | "npc" | "door" | "treasure", id: string, extra?: { targetMapId?: string }) => void;
+  onInteract?: (kind: "store" | "npc" | "door" | "treasure" | "screen", id: string, extra?: { targetMapId?: string; title?: string; text?: string; imageUrl?: string | null }) => void;
   onNearby?: (n: Nearby) => void;
   onInspectPlayer?: (player: OtherPlayer) => void;
 };
@@ -181,7 +182,12 @@ export function CoolEnvironmentViewport({
       if (e.code === "KeyE" || e.code === "Space") {
         if (activeNearbyRef.current) {
           const nb = activeNearbyRef.current;
-          onInteractRef.current?.(nb.kind, nb.id, { targetMapId: (nb as { targetMapId?: string }).targetMapId });
+          onInteractRef.current?.(nb.kind, nb.id, {
+            targetMapId: (nb as { targetMapId?: string }).targetMapId,
+            title: nb.name,
+            text: (nb as { text?: string }).text,
+            imageUrl: (nb as { imageUrl?: string | null }).imageUrl,
+          });
         }
       }
     };
@@ -347,14 +353,17 @@ export function CoolEnvironmentViewport({
 
       // Render Map Objects
       type InteractableTarget = {
-        kind: "store" | "npc" | "door" | "treasure";
+        kind: "store" | "npc" | "door" | "treasure" | "screen";
         id: string;
         name: string;
         x: number;
         z: number;
         targetMapId?: string;
+        text?: string;
+        imageUrl?: string | null;
       };
       const interactables: InteractableTarget[] = [];
+      const clickableObjects: THREE.Object3D[] = [];
       type SolidBox = { minX: number; maxX: number; minZ: number; maxZ: number };
       const solidBoxes: SolidBox[] = [];
 
@@ -367,7 +376,7 @@ export function CoolEnvironmentViewport({
         const oz = obj.y + od / 2;
 
         if (obj.object_type === "room") {
-          // 🏠 The Sims Style Room
+          // 🏠 The Sims Style Room with Solid Walls & Open Entrance Door
           const rx = obj.x;
           const rz = obj.y;
           const rw = ow;
@@ -376,7 +385,6 @@ export function CoolEnvironmentViewport({
           const wallCol = (meta.wall_color as string) || "#0284c7";
           const roomFlrCol = (meta.floor_color as string) || "#0f172a";
           const rName = (meta.room_name as string) || (meta.label as string) || "חדר";
-          const doorOpen = (meta.door_opening as string) || "south";
 
           const roomGroup = new THREE.Group();
 
@@ -390,7 +398,7 @@ export function CoolEnvironmentViewport({
           const wallMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(wallCol), roughness: 0.45 });
           const wallThick = 12;
 
-          // North Wall (Back)
+          // North Wall (Back) - Solid
           const northWall = new THREE.Mesh(new THREE.BoxGeometry(rw, wallH, wallThick), wallMat);
           northWall.position.set(rx + rw / 2, wallH / 2, rz);
           northWall.castShadow = true;
@@ -398,7 +406,7 @@ export function CoolEnvironmentViewport({
           roomGroup.add(northWall);
           solidBoxes.push({ minX: rx, maxX: rx + rw, minZ: rz - wallThick / 2, maxZ: rz + wallThick / 2 });
 
-          // West Wall (Left)
+          // West Wall (Left) - Solid
           const westWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, wallH, rd), wallMat);
           westWall.position.set(rx, wallH / 2, rz + rd / 2);
           westWall.castShadow = true;
@@ -406,32 +414,73 @@ export function CoolEnvironmentViewport({
           roomGroup.add(westWall);
           solidBoxes.push({ minX: rx - wallThick / 2, maxX: rx + wallThick / 2, minZ: rz, maxZ: rz + rd });
 
-          // East Wall (Right low wall)
+          // East Wall (Right low wall) - Solid
           const lowWallH = wallH * 0.35;
           const eastWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, lowWallH, rd), wallMat);
           eastWall.position.set(rx + rw, lowWallH / 2, rz + rd / 2);
           eastWall.castShadow = true;
           roomGroup.add(eastWall);
+          solidBoxes.push({ minX: rx + rw - wallThick / 2, maxX: rx + rw + wallThick / 2, minZ: rz, maxZ: rz + rd });
 
-          // South Wall (Front wall with doorway)
-          if (doorOpen !== "south" && doorOpen !== "all") {
-            const southWall = new THREE.Mesh(new THREE.BoxGeometry(rw, lowWallH, wallThick), wallMat);
-            southWall.position.set(rx + rw / 2, lowWallH / 2, rz + rd);
-            southWall.castShadow = true;
-            roomGroup.add(southWall);
-          } else {
-            const doorW = 120;
-            const sideW = (rw - doorW) / 2;
-            if (sideW > 20) {
-              const southLeft = new THREE.Mesh(new THREE.BoxGeometry(sideW, lowWallH, wallThick), wallMat);
-              southLeft.position.set(rx + sideW / 2, lowWallH / 2, rz + rd);
-              roomGroup.add(southLeft);
+          // South Wall (Front wall) with Open Entrance Doorway
+          const doorW = 110;
+          const sideW = Math.max(16, (rw - doorW) / 2);
 
-              const southRight = new THREE.Mesh(new THREE.BoxGeometry(sideW, lowWallH, wallThick), wallMat);
-              southRight.position.set(rx + rw - sideW / 2, lowWallH / 2, rz + rd);
-              roomGroup.add(southRight);
-            }
-          }
+          // South Left Wall - Solid
+          const southLeft = new THREE.Mesh(new THREE.BoxGeometry(sideW, lowWallH, wallThick), wallMat);
+          southLeft.position.set(rx + sideW / 2, lowWallH / 2, rz + rd);
+          southLeft.castShadow = true;
+          roomGroup.add(southLeft);
+          solidBoxes.push({ minX: rx, maxX: rx + sideW, minZ: rz + rd - wallThick / 2, maxZ: rz + rd + wallThick / 2 });
+
+          // South Right Wall - Solid
+          const southRight = new THREE.Mesh(new THREE.BoxGeometry(sideW, lowWallH, wallThick), wallMat);
+          southRight.position.set(rx + rw - sideW / 2, lowWallH / 2, rz + rd);
+          southRight.castShadow = true;
+          roomGroup.add(southRight);
+          solidBoxes.push({ minX: rx + rw - sideW, maxX: rx + rw, minZ: rz + rd - wallThick / 2, maxZ: rz + rd + wallThick / 2 });
+
+          // 🚪 Visual Open Door Frame & Door Indication (Door is ALWAYS open, in room's chosen color)
+          const doorPostGeo = new THREE.BoxGeometry(8, wallH * 0.95, wallThick + 4);
+          const doorPostMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(wallCol), roughness: 0.35, metalness: 0.15 });
+
+          // Left Doorpost
+          const leftPost = new THREE.Mesh(doorPostGeo, doorPostMat);
+          leftPost.position.set(rx + sideW, (wallH * 0.95) / 2, rz + rd);
+          leftPost.castShadow = true;
+          roomGroup.add(leftPost);
+
+          // Right Doorpost
+          const rightPost = new THREE.Mesh(doorPostGeo, doorPostMat);
+          rightPost.position.set(rx + rw - sideW, (wallH * 0.95) / 2, rz + rd);
+          rightPost.castShadow = true;
+          roomGroup.add(rightPost);
+
+          // Door Top Lintel
+          const lintelGeo = new THREE.BoxGeometry(doorW + 8, 10, wallThick + 4);
+          const lintel = new THREE.Mesh(lintelGeo, doorPostMat);
+          lintel.position.set(rx + rw / 2, wallH * 0.95 - 5, rz + rd);
+          lintel.castShadow = true;
+          roomGroup.add(lintel);
+
+          // Open Door Leaf (hinged on left doorpost, swung inward at 45° angle, matching wallCol)
+          const doorLeafW = doorW * 0.46;
+          const doorLeafH = wallH * 0.84;
+          const doorLeafGeo = new THREE.BoxGeometry(doorLeafW, doorLeafH, 4);
+          const doorLeafMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(wallCol), roughness: 0.3 });
+          const doorLeaf = new THREE.Mesh(doorLeafGeo, doorLeafMat);
+          doorLeaf.position.set(rx + sideW + (doorLeafW / 2) * Math.SQRT1_2, doorLeafH / 2, rz + rd - (doorLeafW / 2) * Math.SQRT1_2);
+          doorLeaf.rotation.y = -Math.PI / 4;
+          doorLeaf.castShadow = true;
+          roomGroup.add(doorLeaf);
+
+          // Entrance Threshold / Welcome Step
+          const threshGeo = new THREE.PlaneGeometry(doorW - 8, 22);
+          const threshMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(wallCol), roughness: 0.2 });
+          const thresh = new THREE.Mesh(threshGeo, threshMat);
+          thresh.rotation.x = -Math.PI / 2;
+          thresh.position.set(rx + rw / 2, 2.0, rz + rd);
+          roomGroup.add(thresh);
 
           // Floating Room Label
           const rCanvas = document.createElement("canvas");
@@ -467,6 +516,8 @@ export function CoolEnvironmentViewport({
 
           const boothGroup = new THREE.Group();
           boothGroup.position.set(ox, 0, oz);
+          const rotY = (meta.rotation_y as number) ?? (meta.rotation_deg ? (meta.rotation_deg as number) * (Math.PI / 180) : 0);
+          boothGroup.rotation.y = rotY;
 
           if (imageUrl) {
             // 2.5D Single Wall Store Display (45° Isometric perspective)
@@ -487,8 +538,6 @@ export function CoolEnvironmentViewport({
 
             const wallMesh = new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH), storeMat);
             wallMesh.position.y = planeH / 2;
-            const rotY = (meta.rotation_y as number) ?? (meta.rotation_deg ? (meta.rotation_deg as number) * (Math.PI / 180) : 0);
-            wallMesh.rotation.y = rotY;
             wallMesh.castShadow = true;
             boothGroup.add(wallMesh);
 
@@ -497,7 +546,6 @@ export function CoolEnvironmentViewport({
             const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(planeW * 0.95, od * 0.7), shadowMat);
             shadowMesh.rotation.x = -Math.PI / 2;
             shadowMesh.position.y = 1;
-            shadowMesh.rotation.z = rotY;
             boothGroup.add(shadowMesh);
 
             // Floating 2.5D Store Title Sign
@@ -533,8 +581,6 @@ export function CoolEnvironmentViewport({
             const backWallMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4 });
             const backWall = new THREE.Mesh(backWallGeo, backWallMat);
             backWall.position.y = planeH / 2;
-            const rotY = (meta.rotation_y as number) ?? 0;
-            backWall.rotation.y = rotY;
             backWall.castShadow = true;
             boothGroup.add(backWall);
 
@@ -570,8 +616,17 @@ export function CoolEnvironmentViewport({
             }
           }
 
+          boothGroup.userData = {
+            interactable: { kind: "store", id: sRef?.id || obj.id, name: storeName },
+          };
+          clickableObjects.push(boothGroup);
           scene.add(boothGroup);
-          solidBoxes.push({ minX: ox - ow / 2, maxX: ox + ow / 2, minZ: oz - (od * 0.7) / 2, maxZ: oz + (od * 0.7) / 2 });
+
+          const cosR = Math.abs(Math.cos(rotY));
+          const sinR = Math.abs(Math.sin(rotY));
+          const rotW = ow * cosR + (od * 0.7) * sinR;
+          const rotD = ow * sinR + (od * 0.7) * cosR;
+          solidBoxes.push({ minX: ox - rotW / 2, maxX: ox + rotW / 2, minZ: oz - rotD / 2, maxZ: oz + rotD / 2 });
         } else if (obj.object_type === "npc") {
           const nRef = npcs.find((n) => n.id === obj.reference_id);
           const npcName = nRef?.name || "NPC";
@@ -579,6 +634,8 @@ export function CoolEnvironmentViewport({
 
           const npcGroup = new THREE.Group();
           npcGroup.position.set(ox, 0, oz);
+          const rotY = (meta.rotation_y as number) ?? (meta.rotation_deg ? (meta.rotation_deg as number) * (Math.PI / 180) : 0);
+          npcGroup.rotation.y = rotY;
 
           const charMat = new THREE.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.4 });
           const charBody = new THREE.Mesh(new THREE.CapsuleGeometry(20, 50, 4, 8), charMat);
@@ -607,6 +664,10 @@ export function CoolEnvironmentViewport({
             npcGroup.add(nSprite);
           }
 
+          npcGroup.userData = {
+            interactable: { kind: "npc", id: nRef?.id || obj.id, name: npcName },
+          };
+          clickableObjects.push(npcGroup);
           scene.add(npcGroup);
         } else if (obj.object_type === "treasure") {
           interactables.push({ kind: "treasure", id: obj.id, name: "תיבת אוצר", x: ox, z: oz });
@@ -625,6 +686,10 @@ export function CoolEnvironmentViewport({
           aura.position.y = 25;
           chestGroup.add(aura);
 
+          chestGroup.userData = {
+            interactable: { kind: "treasure", id: obj.id, name: "תיבת אוצר" },
+          };
+          clickableObjects.push(chestGroup);
           scene.add(chestGroup);
         } else if (obj.object_type === "door") {
           const targetMapId = meta.target_map_id as string;
@@ -646,40 +711,121 @@ export function CoolEnvironmentViewport({
           portalDisc.position.y = 50;
           doorGroup.add(portalDisc);
 
+          doorGroup.userData = {
+            interactable: { kind: "door", id: obj.id, name: "שער מעבר", targetMapId },
+          };
+          clickableObjects.push(doorGroup);
           scene.add(doorGroup);
         } else if (obj.object_type === "screen") {
           const screenGroup = new THREE.Group();
           screenGroup.position.set(ox, 0, oz);
+          const rotY = (meta.rotation_y as number) ?? (meta.rotation_deg ? (meta.rotation_deg as number) * (Math.PI / 180) : 0);
+          screenGroup.rotation.y = rotY;
 
-          const frameMat = new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.8 });
-          const frame = new THREE.Mesh(new THREE.BoxGeometry(ow, oh, 15), frameMat);
+          const scrText = (meta.text as string) || "";
+          const scrImgUrl = (meta.image_url as string) || (meta.sprite_url as string) || null;
+          const scrTitle = (meta.label as string) || (meta.title as string) || "מסך מולטימדיה";
+
+          interactables.push({
+            kind: "screen",
+            id: obj.id,
+            name: scrTitle,
+            text: scrText,
+            imageUrl: scrImgUrl,
+            x: ox,
+            z: oz,
+          });
+
+          // Screen Frame (Dark sleek metallic body)
+          const frameMat = new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.6, metalness: 0.4 });
+          const frame = new THREE.Mesh(new THREE.BoxGeometry(ow, oh, 16), frameMat);
           frame.position.y = oh / 2 + 30;
           frame.castShadow = true;
           screenGroup.add(frame);
 
-          const scrCanvas = document.createElement("canvas");
-          scrCanvas.width = 512;
-          scrCanvas.height = 288;
-          const scrCtx = scrCanvas.getContext("2d");
-          if (scrCtx) {
-            scrCtx.fillStyle = (meta.bg as string) || "#0f172a";
-            scrCtx.fillRect(0, 0, 512, 288);
-            scrCtx.fillStyle = (meta.fg as string) || "#38bdf8";
-            scrCtx.font = "bold 36px sans-serif";
-            scrCtx.textAlign = "center";
-            scrCtx.textBaseline = "middle";
-            scrCtx.fillText((meta.text as string) || "COLT WORLD", 256, 144);
+          // Support Stand Pillar
+          const standMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.6, roughness: 0.3 });
+          const stand = new THREE.Mesh(new THREE.CylinderGeometry(9, 13, 35, 12), standMat);
+          stand.position.y = 17.5;
+          stand.castShadow = true;
+          screenGroup.add(stand);
 
-            const scrTex = new THREE.CanvasTexture(scrCanvas);
+          // Floor Base Plate
+          const basePlate = new THREE.Mesh(new THREE.CylinderGeometry(35, 38, 6, 16), standMat);
+          basePlate.position.y = 3;
+          screenGroup.add(basePlate);
+
+          // Screen Content Surface (Image or Animated Text Canvas)
+          if (scrImgUrl) {
+            const texLoader = new THREE.TextureLoader();
+            const scrTex = texLoader.load(scrImgUrl);
+            scrTex.colorSpace = THREE.SRGBColorSpace;
             const screenFace = new THREE.Mesh(
-              new THREE.PlaneGeometry(ow - 10, oh - 10),
+              new THREE.PlaneGeometry(ow - 12, oh - 12),
               new THREE.MeshBasicMaterial({ map: scrTex })
             );
-            screenFace.position.set(0, oh / 2 + 30, 8);
+            screenFace.position.set(0, oh / 2 + 30, 8.5);
             screenGroup.add(screenFace);
+          } else {
+            const scrCanvas = document.createElement("canvas");
+            scrCanvas.width = 512;
+            scrCanvas.height = 288;
+            const scrCtx = scrCanvas.getContext("2d");
+            if (scrCtx) {
+              scrCtx.fillStyle = (meta.bg as string) || "#0f172a";
+              scrCtx.fillRect(0, 0, 512, 288);
+              scrCtx.fillStyle = (meta.fg as string) || "#38bdf8";
+              scrCtx.font = "bold 32px sans-serif";
+              scrCtx.textAlign = "center";
+              scrCtx.textBaseline = "middle";
+              scrCtx.fillText(scrText || "COLT WORLD", 256, 144);
+
+              const scrTex = new THREE.CanvasTexture(scrCanvas);
+              const screenFace = new THREE.Mesh(
+                new THREE.PlaneGeometry(ow - 12, oh - 12),
+                new THREE.MeshBasicMaterial({ map: scrTex })
+              );
+              screenFace.position.set(0, oh / 2 + 30, 8.5);
+              screenGroup.add(screenFace);
+            }
           }
 
+          // Floating Screen Badge Sign
+          const sTitleCanvas = document.createElement("canvas");
+          sTitleCanvas.width = 384;
+          sTitleCanvas.height = 80;
+          const stCtx = sTitleCanvas.getContext("2d");
+          if (stCtx) {
+            stCtx.fillStyle = "rgba(15, 23, 42, 0.88)";
+            safeRoundRect(stCtx, 8, 8, 368, 64, 16);
+            stCtx.fill();
+            stCtx.strokeStyle = "#38bdf8";
+            stCtx.lineWidth = 3;
+            stCtx.stroke();
+            stCtx.fillStyle = "#ffffff";
+            stCtx.font = "bold 28px sans-serif";
+            stCtx.textAlign = "center";
+            stCtx.textBaseline = "middle";
+            stCtx.fillText(`📺 ${scrTitle}`, 192, 40);
+
+            const stTex = new THREE.CanvasTexture(sTitleCanvas);
+            const stSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: stTex, transparent: true }));
+            stSprite.scale.set(150, 35, 1);
+            stSprite.position.set(0, oh + 55, 0);
+            screenGroup.add(stSprite);
+          }
+
+          screenGroup.userData = {
+            interactable: { kind: "screen", id: obj.id, name: scrTitle, text: scrText, imageUrl: scrImgUrl },
+          };
+          clickableObjects.push(screenGroup);
           scene.add(screenGroup);
+
+          const cosR = Math.abs(Math.cos(rotY));
+          const sinR = Math.abs(Math.sin(rotY));
+          const rotW = ow * cosR + 25 * sinR;
+          const rotD = ow * sinR + 25 * cosR;
+          solidBoxes.push({ minX: ox - rotW / 2, maxX: ox + rotW / 2, minZ: oz - rotD / 2, maxZ: oz + rotD / 2 });
         } else {
           // Decor / Furniture Element
           const decorImageUrl = (meta.image_url as string) || (meta.sprite_url as string);
@@ -688,6 +834,8 @@ export function CoolEnvironmentViewport({
 
           const decorGroup = new THREE.Group();
           decorGroup.position.set(ox, 0, oz);
+          const rotY = (meta.rotation_y as number) ?? (meta.rotation_deg ? (meta.rotation_deg as number) * (Math.PI / 180) : 0);
+          decorGroup.rotation.y = rotY;
 
           if (decorImageUrl) {
             const planeW = ow || 120;
@@ -707,8 +855,6 @@ export function CoolEnvironmentViewport({
 
             const decorMesh = new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH), decorMat);
             decorMesh.position.y = planeH / 2;
-            const rotY = (meta.rotation_y as number) ?? 0;
-            decorMesh.rotation.y = rotY;
             decorMesh.castShadow = true;
             decorGroup.add(decorMesh);
 
@@ -716,7 +862,6 @@ export function CoolEnvironmentViewport({
             const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(planeW * 0.9, od * 0.7), shadowMat);
             shadowMesh.rotation.x = -Math.PI / 2;
             shadowMesh.position.y = 1;
-            shadowMesh.rotation.z = rotY;
             decorGroup.add(shadowMesh);
           } else if (preset.id === "cyber_tree") {
             const trunk = new THREE.Mesh(new THREE.CylinderGeometry(8, 12, 60), new THREE.MeshStandardMaterial({ color: 0x334155 }));
@@ -821,6 +966,33 @@ export function CoolEnvironmentViewport({
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
         raycaster.setFromCamera(mouse, camera);
+
+        // Check if an interactive object was clicked directly
+        const hitInteracts = raycaster.intersectObjects(clickableObjects, true);
+        if (hitInteracts.length > 0) {
+          let curr: THREE.Object3D | null = hitInteracts[0].object;
+          while (curr && !curr.userData?.interactable) {
+            curr = curr.parent;
+          }
+          if (curr && curr.userData?.interactable) {
+            const it = curr.userData.interactable as {
+              kind: "store" | "npc" | "door" | "treasure" | "screen";
+              id: string;
+              name: string;
+              targetMapId?: string;
+              text?: string;
+              imageUrl?: string | null;
+            };
+            onInteractRef.current?.(it.kind, it.id, {
+              targetMapId: it.targetMapId,
+              title: it.name,
+              text: it.text,
+              imageUrl: it.imageUrl,
+            });
+            return;
+          }
+        }
+
         const intersects = raycaster.intersectObject(floor);
         if (intersects.length > 0) {
           const pt = intersects[0].point;
@@ -831,7 +1003,7 @@ export function CoolEnvironmentViewport({
 
       // Animation & Movement Loop
       let lastTime = performance.now();
-      const SPEED = 5.5;
+      const SPEED = 8.2;
 
       const animate = () => {
         if (disposed) return;
@@ -1019,6 +1191,8 @@ export function CoolEnvironmentViewport({
             id: closest.id,
             name: closest.name,
             ...(closest.targetMapId ? { targetMapId: closest.targetMapId } : {}),
+            ...(closest.text ? { text: closest.text } : {}),
+            ...(closest.imageUrl ? { imageUrl: closest.imageUrl } : {}),
           };
           setActiveNearby(nb);
           onNearbyRef.current?.(nb);
@@ -1092,6 +1266,7 @@ export function CoolEnvironmentViewport({
             {activeNearby.kind === "npc" && <MessageCircle className="w-5 h-5" />}
             {activeNearby.kind === "door" && <DoorOpen className="w-5 h-5" />}
             {activeNearby.kind === "treasure" && <Gift className="w-5 h-5" />}
+            {activeNearby.kind === "screen" && <Monitor className="w-5 h-5" />}
           </div>
           <div>
             <div className="text-xs text-primary font-bold">
@@ -1099,6 +1274,7 @@ export function CoolEnvironmentViewport({
               {activeNearby.kind === "npc" && "דמות שיחה"}
               {activeNearby.kind === "door" && "שער מעבר"}
               {activeNearby.kind === "treasure" && "תיבת פרס"}
+              {activeNearby.kind === "screen" && "מסך מולטימדיה"}
             </div>
             <div className="text-sm font-extrabold">{activeNearby.name}</div>
           </div>
@@ -1107,12 +1283,15 @@ export function CoolEnvironmentViewport({
               if (activeNearby) {
                 onInteract?.(activeNearby.kind, activeNearby.id, {
                   targetMapId: (activeNearby as { targetMapId?: string }).targetMapId,
+                  title: activeNearby.name,
+                  text: (activeNearby as { text?: string }).text,
+                  imageUrl: (activeNearby as { imageUrl?: string | null }).imageUrl,
                 });
               }
             }}
             className="btn-plastic !px-4 !py-1.5 text-xs font-bold mr-2"
           >
-            פתח / דבר [E]
+            {activeNearby.kind === "screen" ? "צפה במסך [E]" : "פתח / דבר [E]"}
           </button>
         </div>
       )}

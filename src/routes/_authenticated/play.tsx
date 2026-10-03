@@ -24,6 +24,7 @@ import { syncWooStock } from "@/lib/woo.functions";
 import { useTourAction } from "@/lib/tour";
 import { QuestProgressToast } from "@/components/game/QuestProgressToast";
 import { trackQuestAction } from "@/lib/quest-events";
+import { Monitor, X } from "lucide-react";
 
 
 
@@ -36,6 +37,7 @@ type Nearby =
   | { kind: "npc"; id: string; name: string }
   | { kind: "door"; id: string; name: string; targetMapId?: string }
   | { kind: "treasure"; id: string; name: string }
+  | { kind: "screen"; id: string; name: string; text?: string; imageUrl?: string | null }
   | null;
 
 function PlayPage() {
@@ -50,6 +52,11 @@ function PlayPage() {
 
   const [chatOverlay, setChatOverlay] = useState<{ conversationId: string; name: string } | null>(null);
   const [showChat, setShowChat] = useState(false);
+  const [screenModalData, setScreenModalData] = useState<{
+    title: string;
+    text?: string;
+    imageUrl?: string | null;
+  } | null>(null);
   const [activeMapId, setActiveMapId] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
       return new URLSearchParams(window.location.search).get("mapId") || null;
@@ -190,7 +197,19 @@ function PlayPage() {
   }, [user]);
 
   // NPC contact = start conversation. Store contact = open catalog modal.
-  const openInteraction = async (kind: "store" | "npc" | "door" | "treasure", id: string, extra?: { targetMapId?: string }) => {
+  const openInteraction = async (
+    kind: "store" | "npc" | "door" | "treasure" | "screen",
+    id: string,
+    extra?: { targetMapId?: string; title?: string; text?: string; imageUrl?: string | null }
+  ) => {
+    if (kind === "screen") {
+      setScreenModalData({
+        title: extra?.title || "מסך תצוגה",
+        text: extra?.text,
+        imageUrl: extra?.imageUrl,
+      });
+      return;
+    }
     if (kind === "door") {
       if (extra?.targetMapId) { setActiveMapId(extra.targetMapId); toast.success(t("play.enteredMap") || "Entered a new place"); }
       return;
@@ -380,6 +399,20 @@ function PlayPage() {
                       🧰 פתיחת תיבה
                     </button>
                   )}
+                  {nearby.kind === "screen" && (
+                    <button
+                      className="btn-plastic !px-2 !py-1 text-[9px] leading-none md:!px-3 md:!py-1.5 md:text-xs"
+                      onClick={() =>
+                        openInteraction("screen", nearby.id, {
+                          title: nearby.name,
+                          text: (nearby as { text?: string }).text,
+                          imageUrl: (nearby as { imageUrl?: string | null }).imageUrl,
+                        })
+                      }
+                    >
+                      📺 צפה במסך
+                    </button>
+                  )}
                   {nearby.kind === "door" && (
                     <button className="btn-plastic !px-2 !py-1 text-[9px] leading-none md:!px-3 md:!py-1.5 md:text-xs" onClick={() => openInteraction("door", nearby.id, { targetMapId: nearby.targetMapId })}>
                       🚪 {t("play.enterDoor") || "היכנסו"}
@@ -441,6 +474,79 @@ function PlayPage() {
           onClose={() => setInspectedPlayer(null)}
           onStartChat={(pid, uname) => startConversationWith("npc", pid, uname)}
         />
+      )}
+
+      {/* Screen View Modal Popup */}
+      {screenModalData && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+          onClick={() => setScreenModalData(null)}
+        >
+          <div
+            className="relative w-full max-w-xl overflow-hidden rounded-3xl border-2 border-cyan-400/40 bg-slate-900/95 p-5 md:p-6 shadow-2xl shadow-cyan-500/20 text-white"
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-cyan-500/20 p-2.5 text-cyan-400 border border-cyan-500/30">
+                  <Monitor className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg md:text-xl font-black text-white tracking-wide">
+                    {screenModalData.title || "מסך תצוגה"}
+                  </h3>
+                  <p className="text-xs text-cyan-400 font-medium">שידור חי / תוכן מסך מולטימדיה</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setScreenModalData(null)}
+                className="rounded-xl p-2 text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+                title="סגור"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="mt-4 space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+              {screenModalData.imageUrl && (
+                <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-black/50 shadow-inner">
+                  <img
+                    src={screenModalData.imageUrl}
+                    alt={screenModalData.title}
+                    className="w-full max-h-[380px] object-contain rounded-2xl mx-auto"
+                  />
+                </div>
+              )}
+
+              {screenModalData.text && (
+                <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200 font-medium">
+                    {screenModalData.text}
+                  </p>
+                </div>
+              )}
+
+              {!screenModalData.imageUrl && !screenModalData.text && (
+                <div className="py-8 text-center text-white/50 text-sm">
+                  אין תוכן מוגדר כרגע במסך זה.
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setScreenModalData(null)}
+                className="btn-plastic !px-6 !py-2 text-sm font-bold"
+              >
+                סגור
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

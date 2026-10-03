@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ImageUpload } from "@/components/owner/ImageUpload";
 import { FLOOR_TYPES, makeFloorCanvas, type FloorType } from "@/lib/floor-textures";
-import { Sparkles, Eye, Move, Plus, Trash2, RotateCw, ZoomIn, ZoomOut, Save, LayoutGrid, Maximize2, Palette, DoorClosed, Box, Hand, Navigation, Target, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, User } from "lucide-react";
+import { Sparkles, Eye, Move, Plus, Trash2, RotateCw, RotateCcw, Monitor, ZoomIn, ZoomOut, Save, LayoutGrid, Maximize2, Palette, DoorClosed, Box, Hand, Navigation, Target, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, User } from "lucide-react";
 
 type ObjRow = {
   id: string;
@@ -109,6 +109,7 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
   const [decorPresetId, setDecorPresetId] = useState("cyber_tree");
   const [decorSprite, setDecorSprite] = useState<string | null>(null);
   const [screenText, setScreenText] = useState("ברוכים הבאים לסביבה המגניבה!");
+  const [screenImageUrl, setScreenImageUrl] = useState<string | null>(null);
   const [screenBg, setScreenBg] = useState("#0f172a");
   const [screenFg, setScreenFg] = useState("#38bdf8");
   const [floorType, setFloorType] = useState<FloorType>(((map.floor_type as FloorType) ?? "neon"));
@@ -382,29 +383,85 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
       ctx.fill();
       ctx.globalAlpha = 1;
 
-      // South Wall (Front)
-      if (doorOpen !== "south" && doorOpen !== "all") {
-        ctx.beginPath();
-        ctx.moveTo(rp3.x, rp3.y);
-        ctx.lineTo(rp2.x, rp2.y);
-        ctx.lineTo(topP2_low.x, topP2_low.y);
-        ctx.lineTo(topP3_low.x, topP3_low.y);
-        ctx.closePath();
-        ctx.fillStyle = wallCol;
-        ctx.globalAlpha = 0.65;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      } else {
-        const doorW = 100;
-        const doorStart = toScreen(rx + (rw - doorW) / 2, rz + rd);
-        const doorEnd = toScreen(rx + (rw + doorW) / 2, rz + rd);
-        ctx.strokeStyle = "#38bdf8";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(doorStart.x, doorStart.y);
-        ctx.lineTo(doorEnd.x, doorEnd.y);
-        ctx.stroke();
-      }
+      // South Wall (Front) with Open Entrance Doorway
+      const doorW = 110;
+      const sideW = Math.max(16, (rw - doorW) / 2);
+
+      const pDoorLeft = toScreen(rx + sideW, rz + rd);
+      const topDoorLeft_low = toScreen(rx + sideW, rz + rd, lowH);
+      const pDoorRight = toScreen(rx + rw - sideW, rz + rd);
+      const topDoorRight_low = toScreen(rx + rw - sideW, rz + rd, lowH);
+
+      // South Left Wall
+      ctx.beginPath();
+      ctx.moveTo(rp3.x, rp3.y);
+      ctx.lineTo(pDoorLeft.x, pDoorLeft.y);
+      ctx.lineTo(topDoorLeft_low.x, topDoorLeft_low.y);
+      ctx.lineTo(topP3_low.x, topP3_low.y);
+      ctx.closePath();
+      ctx.fillStyle = wallCol;
+      ctx.globalAlpha = 0.75;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.stroke();
+
+      // South Right Wall
+      ctx.beginPath();
+      ctx.moveTo(pDoorRight.x, pDoorRight.y);
+      ctx.lineTo(rp2.x, rp2.y);
+      ctx.lineTo(topP2_low.x, topP2_low.y);
+      ctx.lineTo(topDoorRight_low.x, topDoorRight_low.y);
+      ctx.closePath();
+      ctx.fillStyle = wallCol;
+      ctx.fill();
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // 🚪 Open Entrance Doorway Frame & Open Door Indication
+      const topDoorLeft_high = toScreen(rx + sideW, rz + rd, wallH * 0.95);
+      const topDoorRight_high = toScreen(rx + rw - sideW, rz + rd, wallH * 0.95);
+
+      // Left post
+      ctx.strokeStyle = wallCol;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(pDoorLeft.x, pDoorLeft.y);
+      ctx.lineTo(topDoorLeft_high.x, topDoorLeft_high.y);
+      ctx.stroke();
+
+      // Right post
+      ctx.beginPath();
+      ctx.moveTo(pDoorRight.x, pDoorRight.y);
+      ctx.lineTo(topDoorRight_high.x, topDoorRight_high.y);
+      ctx.stroke();
+
+      // Top lintel
+      ctx.beginPath();
+      ctx.moveTo(topDoorLeft_high.x, topDoorLeft_high.y);
+      ctx.lineTo(topDoorRight_high.x, topDoorRight_high.y);
+      ctx.stroke();
+
+      // Open Door Leaf (swung 45° inward into room)
+      const doorLeafInner = toScreen(rx + sideW + (doorW * 0.35) * Math.SQRT1_2, rz + rd - (doorW * 0.35) * Math.SQRT1_2);
+      const doorLeafTop = toScreen(rx + sideW + (doorW * 0.35) * Math.SQRT1_2, rz + rd - (doorW * 0.35) * Math.SQRT1_2, wallH * 0.82);
+      ctx.beginPath();
+      ctx.moveTo(pDoorLeft.x, pDoorLeft.y);
+      ctx.lineTo(doorLeafInner.x, doorLeafInner.y);
+      ctx.lineTo(doorLeafTop.x, doorLeafTop.y);
+      ctx.lineTo(topDoorLeft_high.x, topDoorLeft_high.y * 0.9);
+      ctx.closePath();
+      ctx.fillStyle = wallCol;
+      ctx.globalAlpha = 0.55;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.stroke();
+
+      // Entrance Threshold Indicator
+      const doorCenter = toScreen(rx + rw / 2, rz + rd);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 9px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("🚪 דלת כניסה (פתוחה)", doorCenter.x, doorCenter.y + 14);
 
       // Room Center Label
       const roomCenter = toScreen(rx + rw / 2, rz + rd / 2, 5);
@@ -515,16 +572,41 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         ctx.textAlign = "center";
         ctx.fillText(`🚪 ${targetMap}`, basePos.x, basePos.y - 75);
       } else if (obj.object_type === "screen") {
-        const text = (meta.text as string) || "מסך תצוגה";
-        ctx.fillStyle = (meta.bg as string) || "#0f172a";
-        ctx.fillRect(basePos.x - 60, basePos.y - 80, 120, 65);
-        ctx.strokeStyle = "#38bdf8";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(basePos.x - 60, basePos.y - 80, 120, 65);
-        ctx.fillStyle = (meta.fg as string) || "#38bdf8";
+        const text = (meta.text as string) || (meta.label as string) || "מסך תצוגה";
+        const imgUrl = (meta.image_url as string) || (meta.sprite_url as string) || null;
+        const scrImg = imgUrl ? getCachedImg(imgUrl) : null;
+        const sw = 130 * zoom;
+        const sh = 75 * zoom;
+        const rotY = (meta.rotation_y as number) ?? (meta.rotation_deg ? (meta.rotation_deg as number) * (Math.PI / 180) : 0);
+
+        ctx.save();
+        ctx.translate(basePos.x, basePos.y - 45);
+        ctx.rotate(rotY * 0.5);
+
+        if (scrImg) {
+          ctx.drawImage(scrImg, -sw / 2, -sh / 2, sw, sh);
+          ctx.strokeStyle = "#38bdf8";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+        } else {
+          ctx.fillStyle = (meta.bg as string) || "#0f172a";
+          ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+          ctx.strokeStyle = "#38bdf8";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+          ctx.fillStyle = (meta.fg as string) || "#38bdf8";
+          ctx.font = "bold 10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(text.slice(0, 16), 0, 4);
+        }
+
+        ctx.restore();
+
+        // Screen Label above
+        ctx.fillStyle = "#ffffff";
         ctx.font = "bold 10px sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(text.slice(0, 18), basePos.x, basePos.y - 45);
+        ctx.fillText(`📺 ${text.slice(0, 14)}`, basePos.x, basePos.y - 75);
       } else {
         const decorPreset = COOL_DECOR_PRESETS.find((d) => d.id === meta.preset) || COOL_DECOR_PRESETS[0];
         const imgUrl = (meta.image_url as string) || (meta.sprite_url as string);
@@ -823,8 +905,15 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         width: d.width,
         height: d.depth,
         depth: d.depth,
-        interactive: false,
-        metadata: { text: screenText, bg: screenBg, fg: screenFg, height_3d: d.height },
+        interactive: true,
+        metadata: {
+          text: screenText,
+          image_url: screenImageUrl,
+          bg: screenBg,
+          fg: screenFg,
+          height_3d: d.height,
+          rotation_y: 0,
+        },
       };
     } else if (tool === "spawn") {
       payload = {
@@ -1185,32 +1274,45 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         )}
 
         {tool === "screen" && (
-          <div className="chrome-panel p-3 space-y-2">
-            <label className="block text-xs font-bold">📺 טקסט במסך</label>
-            <input
-              type="text"
-              value={screenText}
-              onChange={(e) => setScreenText(e.target.value)}
-              className="w-full rounded-xl border border-border bg-input px-2.5 py-1.5 text-xs"
-              placeholder="ברוכים הבאים!"
-            />
+          <div className="chrome-panel p-3 space-y-2.5">
+            <label className="block text-xs font-bold">📺 הגדרת מסך מולטימדיה</label>
+            <div>
+              <label className="block text-[10px] text-muted-foreground mb-1">טקסט במסך</label>
+              <input
+                type="text"
+                value={screenText}
+                onChange={(e) => setScreenText(e.target.value)}
+                className="w-full rounded-xl border border-border bg-input px-2.5 py-1.5 text-xs"
+                placeholder="ברוכים הבאים!"
+              />
+            </div>
+
+            <div>
+              <ImageUpload
+                value={screenImageUrl}
+                onChange={(url) => setScreenImageUrl(url)}
+                label="🖼️ תמונה להצגה על המסך"
+                folder="screens"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[10px] text-muted-foreground">רקע</label>
+                <label className="block text-[10px] text-muted-foreground">צבע רקע</label>
                 <input
                   type="color"
                   value={screenBg}
                   onChange={(e) => setScreenBg(e.target.value)}
-                  className="w-full h-7 rounded border border-border"
+                  className="w-full h-7 rounded border border-border cursor-pointer"
                 />
               </div>
               <div>
-                <label className="block text-[10px] text-muted-foreground">טקסט</label>
+                <label className="block text-[10px] text-muted-foreground">צבע טקסט</label>
                 <input
                   type="color"
                   value={screenFg}
                   onChange={(e) => setScreenFg(e.target.value)}
-                  className="w-full h-7 rounded border border-border"
+                  className="w-full h-7 rounded border border-border cursor-pointer"
                 />
               </div>
             </div>
@@ -1445,39 +1547,208 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
                     </div>
                   )}
 
-                  <div>
-                    <ImageUpload
-                      value={(selected.metadata?.image_url as string) || null}
-                      onChange={async (url) => {
-                        const newMeta = { ...(selected.metadata || {}), image_url: url };
-                        selected.metadata = newMeta;
-                        await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
-                        qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
-                      }}
-                      folder="stores"
-                      label="🖼️ תמונת חנות / תפאורה בדו-מימד (פרונט קיר 1 ב-2.5D)"
-                    />
+                  {selected.object_type === "screen" && (
+                    <div className="space-y-2 border-t border-border pt-2">
+                      <div>
+                        <label className="text-[10px] text-muted-foreground block mb-0.5 font-bold">📺 כותרת המסך (שם)</label>
+                        <input
+                          type="text"
+                          value={(selected.metadata?.label as string) || (selected.metadata?.title as string) || ""}
+                          onChange={async (e) => {
+                            const newMeta = { ...(selected.metadata || {}), label: e.target.value, title: e.target.value };
+                            selected.metadata = newMeta;
+                            await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                            qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                          }}
+                          placeholder="למשל: מסך מבצעים / הודעות יריד"
+                          className="w-full rounded-lg border border-border bg-input px-2 py-1 text-xs font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-muted-foreground block mb-0.5 font-bold">📝 טקסט / תוכן המסך</label>
+                        <textarea
+                          rows={3}
+                          value={(selected.metadata?.text as string) || ""}
+                          onChange={async (e) => {
+                            const newMeta = { ...(selected.metadata || {}), text: e.target.value };
+                            selected.metadata = newMeta;
+                            await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                            qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                          }}
+                          placeholder="תוכן ההודעה שיופיע בפופאפ כשהשחקנים מתקרבים וצופים במסך..."
+                          className="w-full rounded-lg border border-border bg-input px-2 py-1 text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <ImageUpload
+                          value={(selected.metadata?.image_url as string) || null}
+                          onChange={async (url) => {
+                            const newMeta = { ...(selected.metadata || {}), image_url: url };
+                            selected.metadata = newMeta;
+                            await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                            qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                          }}
+                          folder="screens"
+                          label="🖼️ תמונה להצגה על המסך (נראית ב-2.5D ובפופאפ)"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-muted-foreground block mb-0.5">צבע רקע</label>
+                          <input
+                            type="color"
+                            value={(selected.metadata?.bg as string) || "#0f172a"}
+                            onChange={async (e) => {
+                              const newMeta = { ...(selected.metadata || {}), bg: e.target.value };
+                              selected.metadata = newMeta;
+                              await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                              qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                            }}
+                            className="w-full h-7 rounded border border-border cursor-pointer"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-muted-foreground block mb-0.5">צבע טקסט</label>
+                          <input
+                            type="color"
+                            value={(selected.metadata?.fg as string) || "#38bdf8"}
+                            onChange={async (e) => {
+                              const newMeta = { ...(selected.metadata || {}), fg: e.target.value };
+                              selected.metadata = newMeta;
+                              await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                              qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                            }}
+                            className="w-full h-7 rounded border border-border cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selected.object_type !== "screen" && (
+                    <div>
+                      <ImageUpload
+                        value={(selected.metadata?.image_url as string) || null}
+                        onChange={async (url) => {
+                          const newMeta = { ...(selected.metadata || {}), image_url: url };
+                          selected.metadata = newMeta;
+                          await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                          qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                        }}
+                        folder="stores"
+                        label="🖼️ תמונת חנות / תפאורה בדו-מימד (פרונט קיר 1 ב-2.5D)"
+                      />
+                    </div>
+                  )}
+
+                  {/* 🔄 45-Degree Rotation Tool for ALL elements */}
+                  <div className="space-y-1.5 p-2 rounded-xl bg-card border border-border">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold">🔄 סיבוב אלמנט ב-45° לכל צד</span>
+                      <span className="text-[10px] font-mono text-primary font-extrabold">
+                        {Math.round((((((selected.metadata?.rotation_y as number) ?? 0) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) * (180 / Math.PI))}°
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const cur = (selected.metadata?.rotation_y as number) ?? 0;
+                          const step = Math.PI / 4;
+                          const next = cur - step;
+                          const twoPi = Math.PI * 2;
+                          const norm = ((next % twoPi) + twoPi) % twoPi;
+                          const snapIndex = Math.round(norm / step) % 8;
+                          const snappedVal = snapIndex * step;
+                          const newMeta = { ...(selected.metadata || {}), rotation_y: snappedVal, rotation_deg: snapIndex * 45 };
+                          selected.metadata = newMeta;
+                          await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                          qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                        }}
+                        className="btn-plastic !py-1 !px-2 text-xs flex items-center justify-center gap-1 font-bold"
+                        title="סובב 45 מעלות שמאלה"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-primary" />
+                        <span>45°- שמאלה</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const cur = (selected.metadata?.rotation_y as number) ?? 0;
+                          const step = Math.PI / 4;
+                          const next = cur + step;
+                          const twoPi = Math.PI * 2;
+                          const norm = ((next % twoPi) + twoPi) % twoPi;
+                          const snapIndex = Math.round(norm / step) % 8;
+                          const snappedVal = snapIndex * step;
+                          const newMeta = { ...(selected.metadata || {}), rotation_y: snappedVal, rotation_deg: snapIndex * 45 };
+                          selected.metadata = newMeta;
+                          await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                          qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                        }}
+                        className="btn-plastic !py-1 !px-2 text-xs flex items-center justify-center gap-1 font-bold"
+                        title="סובב 45 מעלות ימינה"
+                      >
+                        <RotateCw className="w-3.5 h-3.5 text-primary" />
+                        <span>45°+ ימינה</span>
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 pt-1 justify-center">
+                      {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
+                        const rad = deg * (Math.PI / 180);
+                        const curDeg = Math.round((((((selected.metadata?.rotation_y as number) ?? 0) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) * (180 / Math.PI));
+                        const isCur = curDeg === deg;
+                        return (
+                          <button
+                            key={deg}
+                            type="button"
+                            onClick={async () => {
+                              const newMeta = { ...(selected.metadata || {}), rotation_y: rad, rotation_deg: deg };
+                              selected.metadata = newMeta;
+                              await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                              qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                            }}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all ${
+                              isCur
+                                ? "bg-primary text-primary-foreground shadow"
+                                : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                            }`}
+                          >
+                            {deg}°
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[10px] text-muted-foreground block mb-0.5">זווית סבסוב (קיר 1 / 45°)</label>
+                      <label className="text-[10px] text-muted-foreground block mb-0.5">זווית סבסוב מותאמת</label>
                       <select
                         value={(selected.metadata?.rotation_y as number) ?? 0}
                         onChange={async (e) => {
                           const val = Number(e.target.value);
-                          const newMeta = { ...(selected.metadata || {}), rotation_y: val };
+                          const deg = Math.round(val * (180 / Math.PI));
+                          const newMeta = { ...(selected.metadata || {}), rotation_y: val, rotation_deg: deg };
                           selected.metadata = newMeta;
                           await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
                           qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
                         }}
                         className="w-full rounded-lg border border-border bg-input px-2 py-1 text-xs font-bold"
                       >
-                        <option value={0}>חזית 0° (קיר 1 ישר)</option>
-                        <option value={Math.PI / 4}>אלכסון 45° (איזומטרי)</option>
-                        <option value={Math.PI / 2}>פרופיל 90°</option>
+                        <option value={0}>חזית 0° (קיר ישר)</option>
+                        <option value={Math.PI / 4}>אלכסון 45° (איזומטרי ימין)</option>
+                        <option value={Math.PI / 2}>פרופיל 90° (צד)</option>
                         <option value={(3 * Math.PI) / 4}>אלכסון 135°</option>
                         <option value={Math.PI}>גב 180°</option>
+                        <option value={(5 * Math.PI) / 4}>אלכסון 225°</option>
+                        <option value={(3 * Math.PI) / 2}>פרופיל 270° (צד שמאל)</option>
+                        <option value={(7 * Math.PI) / 4}>אלכסון 315° (איזומטרי שמאל)</option>
                       </select>
                     </div>
 

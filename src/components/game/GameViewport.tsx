@@ -127,7 +127,8 @@ type Look = { idle: string | null; right: string | null; left: string | null; co
 
 const GRAVITY = 0.55;
 const JUMP = 13.5;
-const SPEED = 4;
+const SPEED = 8.8;
+const RUN_SPEED = 12.0;
 
 // Simple sprite cache
 const IMG_CACHE = new Map<string, HTMLImageElement>();
@@ -217,6 +218,10 @@ export function GameViewport({
     // Only reset character coordinates on first load or when switching to a different map
     if (mapLoadedRef.current !== mapId) {
       mapLoadedRef.current = mapId;
+      s.keys = {};
+      if (touchInputRef?.current) {
+        touchInputRef.current = { x: 0, y: 0, jump: false };
+      }
       const spawn = objects.find((o) => o.object_type === "spawn");
       s.x = spawn?.x ?? 100;
       s.y = spawn?.y ?? 100;
@@ -323,10 +328,12 @@ export function GameViewport({
     const step = () => {
       const s = stateRef.current;
       const tin = touchInputRef?.current;
+      const isShift = !!(s.keys["shift"] || s.keys["shiftleft"] || s.keys["shiftright"]);
+      const moveSpeed = isShift ? RUN_SPEED : SPEED;
       const left = s.keys["arrowleft"] || s.keys["a"] || (tin && tin.x < -0.2);
       const right = s.keys["arrowright"] || s.keys["d"] || (tin && tin.x > 0.2);
       const jumpKey = !!(s.keys["arrowup"] || s.keys["w"] || s.keys[" "] || (tin && tin.jump));
-      s.vx = left ? -SPEED : right ? SPEED : 0;
+      s.vx = left ? -moveSpeed : right ? moveSpeed : 0;
       if (s.vx < 0) s.facing = -1; else if (s.vx > 0) s.facing = 1;
 
       // Single crisp jump impulse per press/tap
