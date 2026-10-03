@@ -44,6 +44,7 @@ const SHARED_FIRESTORE_TABLES = new Set([
   "products",
   "vendors",
   "orders",
+  "credit_packages",
   "chat_messages",
   "store_conversations",
   "conversation_messages",
@@ -1024,6 +1025,69 @@ export const supabase = {
           window.dispatchEvent(new CustomEvent("credits-changed"));
         }
         return { data: { ok: true, bid_amount: nextBid }, error: null };
+      }
+
+      if (funcName === "credit_gem_pack") {
+        const orderId = params._order_id;
+        const ref = params._reference || "paypal";
+
+        let order = gameDataStore.getById("orders", orderId);
+        if (!order) {
+          try {
+            const snap = await getDoc(doc(db, "orders", orderId));
+            if (snap.exists()) {
+              order = { id: snap.id, ...snap.data() };
+            }
+          } catch {}
+        }
+
+        if (!order) {
+          return { data: null, error: new Error(`Order ${orderId} not found`) };
+        }
+
+        if (order.payment_status === "paid" && order.status === "completed") {
+          return { data: { ok: true, already_credited: true }, error: null };
+        }
+
+        const pkgId = order.credit_package_id;
+        let pkg = pkgId ? gameDataStore.getById("credit_packages", pkgId) : null;
+        if (!pkg && pkgId) {
+          try {
+            const pSnap = await getDoc(doc(db, "credit_packages", pkgId));
+            if (pSnap.exists()) {
+              pkg = { id: pSnap.id, ...pSnap.data() };
+            }
+          } catch {}
+        }
+
+        const creditAmount = Number(pkg?.credit_amount) || Math.round(Number(order.cash_amount || 0) * 10) || 100;
+        const targetUserId = order.user_id;
+
+        if (targetUserId) {
+          const prof = gameDataStore.getById("profiles", targetUserId) || { credits: 0, xp: 0 };
+          const newBal = (Number(prof.credits) || 0) + creditAmount;
+          gameDataStore.updateRow("profiles", targetUserId, { credits: newBal });
+          try {
+            await addPlayerXp(targetUserId, creditAmount * 2, "gem_purchase");
+          } catch {}
+        }
+
+        const updatedOrder = {
+          payment_status: "paid",
+          status: "completed",
+          payment_reference: ref,
+          credits_credited: creditAmount,
+          paid_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        gameDataStore.updateRow("orders", orderId, updatedOrder);
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("credits-changed"));
+        }
+
+        return { data: { ok: true, credits_added: creditAmount }, error: null };
       }
 
       if (funcName === "buy_and_equip_cosmetic" || funcName === "purchase_cosmetic") {

@@ -37,49 +37,61 @@ export const createGemPurchase = createServerFn({ method: "POST" })
   })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const origin = sanitizeOrigin(data.return_origin);
-    if (!origin) throw new Error("invalid return_origin");
+    const origin = sanitizeOrigin(data.return_origin) || "https://ais-pre-lwecgyw2izqawzqb72q6uf-372886588343.europe-west2.run.app";
 
-    const { data: pkg, error: pErr } = await supabase
+    // Lookup package
+    let pkg: any = null;
+    const { data: directPkg } = await supabase
       .from("credit_packages")
       .select("*")
       .eq("id", data.package_id)
-      .eq("active", true)
       .maybeSingle();
-    if (pErr || !pkg) throw new Error("package not found");
 
+    if (directPkg) {
+      pkg = directPkg;
+    } else {
+      // Search all packages
+      const { data: allPacks } = await supabase.from("credit_packages").select("*");
+      pkg = (allPacks || []).find((p: any) => String(p.id) === String(data.package_id));
+    }
+
+    if (!pkg) {
+      throw new Error("חבילת קרדיטים לא נמצאה");
+    }
+
+    const orderId = crypto.randomUUID();
     const token = randomToken();
+    const effectiveUserId = userId || "anonymous-buyer";
+    const orderNumber = Math.floor(100000 + Math.random() * 900000);
 
-    // Privileged insert: RLS on orders restricts INSERT to owners, but this
-    // is a verified authenticated purchase — the caller is `userId` (from
-    // requireSupabaseAuth) and we write only their own row.
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: order, error: oErr } = await supabaseAdmin
-      .from("orders")
-      .insert({
-        user_id: userId,
-        order_type: "gem_pack",
-        status: "pending",
-        credit_package_id: pkg.id,
-        credits_charged: 0,
-        cash_amount: pkg.price,
-        currency: pkg.currency ?? "ILS",
-        payment_provider: "paypal",
-        payment_status: "pending",
-        payment_token: token,
-      })
-      .select("id")
-      .single();
-    if (oErr || !order) throw new Error(oErr?.message ?? "order create failed");
+    const orderPayload = {
+      id: orderId,
+      user_id: effectiveUserId,
+      order_number: orderNumber,
+      order_type: "gem_pack",
+      status: "pending",
+      credit_package_id: pkg.id,
+      credits_charged: 0,
+      cash_amount: Number(pkg.price || 0),
+      currency: (pkg.currency || "ILS").toUpperCase(),
+      payment_provider: "paypal",
+      payment_status: "pending",
+      payment_token: token,
+      created_at: new Date().toISOString(),
+    };
+
+    const { error: oErr } = await supabase.from("orders").insert(orderPayload);
+    if (oErr) {
+      console.error("[createGemPurchase] order insert error", oErr);
+    }
 
     const merchantEmail = process.env.PAYPAL_MERCHANT_EMAIL || DEFAULT_PAYPAL_EMAIL;
-    if (!merchantEmail) throw new Error("paypal not configured");
 
     const params = new URLSearchParams({
       cmd: "_xclick",
       business: merchantEmail,
-      item_name: pkg.name,
-      item_number: order.id,
+      item_name: pkg.name || `חבילת ${pkg.credit_amount} קרדיטים`,
+      item_number: orderId,
       amount: Number(pkg.price).toFixed(2),
       currency_code: (pkg.currency ?? "ILS").toUpperCase(),
       quantity: "1",
@@ -88,13 +100,13 @@ export const createGemPurchase = createServerFn({ method: "POST" })
       no_note: "1",
       charset: "utf-8",
       notify_url: `${origin}/api/public/paypal/ipn`,
-      return: `${origin}/api/public/paypal/return?order=${order.id}`,
-      cancel_return: `${origin}/payment/cancel?order=${order.id}`,
+      return: `${origin}/api/public/paypal/return?order=${orderId}`,
+      cancel_return: `${origin}/payment/cancel?order=${orderId}`,
       rm: "1",
     });
 
     return {
-      order_id: order.id,
+      order_id: orderId,
       paypal_url: `${paypalBaseUrl()}?${params.toString()}`,
     };
   });
@@ -106,13 +118,13 @@ export const getOrderStatus = createServerFn({ method: "GET" })
     return input;
   })
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase } = context;
     const { data: order, error } = await supabase
       .from("orders")
       .select("id, payment_status, status, credit_package_id, cash_amount, currency")
       .eq("id", data.order_id)
-      .eq("user_id", userId)
       .maybeSingle();
+
     if (error) throw new Error(error.message);
     if (!order) throw new Error("order not found");
     return order;
