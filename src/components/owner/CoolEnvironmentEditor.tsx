@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ImageUpload } from "@/components/owner/ImageUpload";
 import { FLOOR_TYPES, makeFloorCanvas, type FloorType } from "@/lib/floor-textures";
-import { Sparkles, Eye, Move, Plus, Trash2, RotateCw, RotateCcw, Monitor, ZoomIn, ZoomOut, Save, LayoutGrid, Maximize2, Palette, DoorClosed, Box, Hand, Navigation, Target, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, User } from "lucide-react";
+import { Sparkles, Eye, Move, Plus, Trash2, RotateCw, RotateCcw, Monitor, ZoomIn, ZoomOut, Save, LayoutGrid, Maximize2, Palette, DoorClosed, Box, Hand, Navigation, Target, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, User, Layers } from "lucide-react";
+import { ALL_DECOR_PRESETS, DECOR_CATEGORIES, type DecorCategory, type DecorPresetItem } from "@/lib/decor-catalog";
 
 type ObjRow = {
   id: string;
@@ -37,26 +38,16 @@ const TOOLS: Array<{ key: Tool; label: string; icon: string; desc: string }> = [
   { key: "spawn", label: "נקודת התחלה", icon: "🚩", desc: "מיקום כניסת השחקנים" },
 ];
 
-export const COOL_DECOR_PRESETS: Array<{ id: string; name: string; icon: string; color: string; w: number; d: number; h: number }> = [
-  { id: "cyber_tree", name: "עץ ניאון זוהר", icon: "🌲", color: "#38bdf8", w: 100, d: 100, h: 180 },
-  { id: "palm_plant", name: "עציץ דקל יוקרתי", icon: "🌴", color: "#4ade80", w: 80, d: 80, h: 140 },
-  { id: "neon_pillar", name: "עמוד תאורה עתידני", icon: "💡", color: "#ec4899", w: 50, d: 50, h: 220 },
-  { id: "lounge_couch", name: "ספת לאונג' מעוצבת", icon: "🛋️", color: "#a855f7", w: 160, d: 80, h: 70 },
-  { id: "hologram_podium", name: "פודיום הולוגרמה", icon: "🔮", color: "#06b6d4", w: 90, d: 90, h: 90 },
-  { id: "luxury_rug", name: "שטיח קטיפה מלכותי", icon: "🟪", color: "#8b5cf6", w: 220, d: 160, h: 5 },
-  { id: "cyber_fountain", name: "מזרקת מים מוארת", icon: "⛲", color: "#0ea5e9", w: 150, d: 150, h: 110 },
-  { id: "gold_statue", name: "פסל אספנות מוזהב", icon: "🏆", color: "#eab308", w: 90, d: 90, h: 170 },
-  { id: "table_set", name: "שולחן אירוח מודרני", icon: "🪑", color: "#f97316", w: 120, d: 90, h: 75 },
-];
+export const COOL_DECOR_PRESETS = ALL_DECOR_PRESETS;
 
 const DEFAULTS: Record<Tool, { width: number; depth: number; height: number }> = {
   select: { width: 0, depth: 0, height: 0 },
   pan: { width: 0, depth: 0, height: 0 },
-  room: { width: 400, depth: 300, height: 65 },
+  room: { width: 440, depth: 320, height: 75 },
   store: { width: 280, depth: 220, height: 260 },
   npc: { width: 80, depth: 80, height: 140 },
-  door: { width: 140, depth: 50, height: 210 },
-  decor: { width: 100, depth: 100, height: 160 },
+  door: { width: 180, depth: 60, height: 250 },
+  decor: { width: 120, depth: 120, height: 160 },
   screen: { width: 260, depth: 30, height: 160 },
   treasure: { width: 80, depth: 80, height: 80 },
   spawn: { width: 60, depth: 60, height: 60 },
@@ -106,7 +97,8 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickerId, setPickerId] = useState("");
   const [doorTarget, setDoorTarget] = useState("");
-  const [decorPresetId, setDecorPresetId] = useState("cyber_tree");
+  const [decorCategory, setDecorCategory] = useState<string>("all");
+  const [decorPresetId, setDecorPresetId] = useState<string>(ALL_DECOR_PRESETS[0].id);
   const [decorSprite, setDecorSprite] = useState<string | null>(null);
   const [screenText, setScreenText] = useState("ברוכים הבאים לסביבה המגניבה!");
   const [screenImageUrl, setScreenImageUrl] = useState<string | null>(null);
@@ -383,8 +375,8 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
       ctx.fill();
       ctx.globalAlpha = 1;
 
-      // South Wall (Front) with Open Entrance Doorway
-      const doorW = 110;
+      // South Wall (Front) with Grand Open Entrance Doorway (Extra Tall & Wide)
+      const doorW = 180;
       const sideW = Math.max(16, (rw - doorW) / 2);
 
       const pDoorLeft = toScreen(rx + sideW, rz + rd);
@@ -417,13 +409,13 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
       ctx.stroke();
       ctx.globalAlpha = 1;
 
-      // 🚪 Open Entrance Doorway Frame & Open Door Indication
-      const topDoorLeft_high = toScreen(rx + sideW, rz + rd, wallH * 0.95);
-      const topDoorRight_high = toScreen(rx + rw - sideW, rz + rd, wallH * 0.95);
+      // 🚪 Grand Open Entrance Doorway Frame (Extra Tall & Visible)
+      const topDoorLeft_high = toScreen(rx + sideW, rz + rd, wallH * 1.5);
+      const topDoorRight_high = toScreen(rx + rw - sideW, rz + rd, wallH * 1.5);
 
       // Left post
       ctx.strokeStyle = wallCol;
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 5;
       ctx.beginPath();
       ctx.moveTo(pDoorLeft.x, pDoorLeft.y);
       ctx.lineTo(topDoorLeft_high.x, topDoorLeft_high.y);
@@ -435,33 +427,35 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
       ctx.lineTo(topDoorRight_high.x, topDoorRight_high.y);
       ctx.stroke();
 
-      // Top lintel
+      // Top lintel / Grand portal arch
       ctx.beginPath();
       ctx.moveTo(topDoorLeft_high.x, topDoorLeft_high.y);
       ctx.lineTo(topDoorRight_high.x, topDoorRight_high.y);
       ctx.stroke();
 
-      // Open Door Leaf (swung 45° inward into room)
-      const doorLeafInner = toScreen(rx + sideW + (doorW * 0.35) * Math.SQRT1_2, rz + rd - (doorW * 0.35) * Math.SQRT1_2);
-      const doorLeafTop = toScreen(rx + sideW + (doorW * 0.35) * Math.SQRT1_2, rz + rd - (doorW * 0.35) * Math.SQRT1_2, wallH * 0.82);
+      // Open Door Leaf (swung 50° inward into room, matching wallCol)
+      const doorLeafInner = toScreen(rx + sideW + 60 * 0.7, rz + rd - 60 * 0.7);
+      const doorLeafTop = toScreen(rx + sideW + 60 * 0.7, rz + rd - 60 * 0.7, wallH * 1.35);
       ctx.beginPath();
       ctx.moveTo(pDoorLeft.x, pDoorLeft.y);
       ctx.lineTo(doorLeafInner.x, doorLeafInner.y);
       ctx.lineTo(doorLeafTop.x, doorLeafTop.y);
-      ctx.lineTo(topDoorLeft_high.x, topDoorLeft_high.y * 0.9);
+      ctx.lineTo(topDoorLeft_high.x, topDoorLeft_high.y * 0.95);
       ctx.closePath();
       ctx.fillStyle = wallCol;
-      ctx.globalAlpha = 0.55;
+      ctx.globalAlpha = 0.65;
       ctx.fill();
       ctx.globalAlpha = 1;
       ctx.stroke();
 
-      // Entrance Threshold Indicator
+      // Entrance Threshold Strip
       const doorCenter = toScreen(rx + rw / 2, rz + rd);
+      ctx.fillStyle = wallCol;
+      ctx.fillRect(doorCenter.x - 30, doorCenter.y - 2, 60, 4);
       ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 9px sans-serif";
+      ctx.font = "bold 10px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("🚪 דלת כניסה (פתוחה)", doorCenter.x, doorCenter.y + 14);
+      ctx.fillText("🚪 דלת כניסה פתוחה", doorCenter.x, doorCenter.y + 15);
 
       // Room Center Label
       const roomCenter = toScreen(rx + rw / 2, rz + rd / 2, 5);
@@ -503,10 +497,20 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         const imgUrl = (meta.image_url as string) || sRef?.image_url;
         const sw = ow * zoom * 0.75;
         const sh = oh * zoom * 0.75;
+        const rotY = (meta.rotation_y as number) ?? (meta.rotation_deg ? (meta.rotation_deg as number) * (Math.PI / 180) : 0);
+
+        ctx.save();
+        ctx.translate(basePos.x, basePos.y - sh / 2);
+        if (rotY) {
+          const cosR = Math.cos(rotY * 0.5);
+          const sinR = Math.sin(rotY * 0.35);
+          ctx.transform(cosR, sinR, 0, 1, 0, 0);
+        }
 
         const storeImg = imgUrl ? getCachedImg(imgUrl) : null;
         if (storeImg) {
-          ctx.drawImage(storeImg, basePos.x - sw / 2, basePos.y - sh, sw, sh);
+          ctx.drawImage(storeImg, -sw / 2, -sh / 2, sw, sh);
+          ctx.restore();
           ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
           safeRoundRect(ctx, basePos.x - sw / 2, basePos.y - sh - 22, sw, 20, 8);
           ctx.fill();
@@ -516,12 +520,12 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
           ctx.fillText(`🏪 ${storeName}`, basePos.x, basePos.y - sh - 8);
         } else {
           ctx.fillStyle = "#3b82f6";
-          ctx.fillRect(basePos.x - sw / 2, basePos.y - sh, sw, sh);
+          ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
 
           ctx.beginPath();
-          ctx.moveTo(basePos.x - sw / 2 - 10, basePos.y - sh);
-          ctx.lineTo(basePos.x, basePos.y - sh - 25);
-          ctx.lineTo(basePos.x + sw / 2 + 10, basePos.y - sh);
+          ctx.moveTo(-sw / 2 - 10, -sh / 2);
+          ctx.lineTo(0, -sh / 2 - 25);
+          ctx.lineTo(sw / 2 + 10, -sh / 2);
           ctx.closePath();
           ctx.fillStyle = "#f43f5e";
           ctx.fill();
@@ -529,7 +533,8 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
           ctx.fillStyle = "rgba(255,255,255,0.95)";
           ctx.font = "bold 12px sans-serif";
           ctx.textAlign = "center";
-          ctx.fillText(`🏪 ${storeName}`, basePos.x, basePos.y - sh / 2);
+          ctx.fillText(`🏪 ${storeName}`, 0, 0);
+          ctx.restore();
         }
       } else if (obj.object_type === "npc") {
         const npcName = npcs.find((n) => n.id === obj.reference_id)?.name || "NPC";
@@ -614,7 +619,38 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         const dw = ow * zoom * 0.7;
         const dh = oh * zoom * 0.7;
 
-        if (decorImg) {
+        if (decorPreset.category === "rugs") {
+          // Render Rug flat on the 2.5D floor
+          const p1 = toScreen(ox, oz, 1);
+          const p2 = toScreen(ox + ow, oz, 1);
+          const p3 = toScreen(ox + ow, oz + od, 1);
+          const p4 = toScreen(ox, oz + od, 1);
+
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.lineTo(p3.x, p3.y);
+          ctx.lineTo(p4.x, p4.y);
+          ctx.closePath();
+
+          if (decorImg) {
+            ctx.save();
+            ctx.clip();
+            ctx.drawImage(decorImg, p1.x - dw / 2, p1.y - dh / 2, dw * 1.5, dh * 1.5);
+            ctx.restore();
+          } else {
+            ctx.fillStyle = decorPreset.color;
+            ctx.fill();
+            ctx.strokeStyle = "rgba(255,255,255,0.4)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(`🟪 ${decorPreset.name}`, basePos.x, basePos.y + 10);
+        } else if (decorImg) {
           ctx.drawImage(decorImg, basePos.x - dw / 2, basePos.y - dh, dw, dh);
         } else {
           ctx.fillStyle = decorPreset.color;
@@ -928,7 +964,7 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         interactive: false,
       };
     } else if (tool === "decor") {
-      const preset = COOL_DECOR_PRESETS.find((p) => p.id === decorPresetId) || COOL_DECOR_PRESETS[0];
+      const preset = ALL_DECOR_PRESETS.find((p) => p.id === decorPresetId) || ALL_DECOR_PRESETS[0];
       payload = {
         ...base,
         object_type: "decor",
@@ -937,7 +973,13 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         width: preset.w,
         height: preset.d,
         depth: preset.d,
-        metadata: { preset: preset.id, height_3d: preset.h, sprite_url: decorSprite },
+        metadata: {
+          preset: preset.id,
+          category: preset.category,
+          height_3d: preset.h,
+          sprite_url: decorSprite || undefined,
+          image_url: decorSprite || undefined,
+        },
       };
     }
 
@@ -1243,31 +1285,82 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         )}
 
         {tool === "decor" && (
-          <div className="chrome-panel p-3 space-y-2">
-            <label className="block text-xs font-bold">✨ אלמנט עיצובי מהקטלוג</label>
-            <div className="grid grid-cols-1 gap-1">
-              {COOL_DECOR_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setDecorPresetId(p.id)}
-                  className={`flex items-center gap-2 p-1.5 rounded-lg text-xs text-right border transition-all ${
-                    decorPresetId === p.id
-                      ? "bg-secondary text-secondary-foreground border-secondary font-bold"
-                      : "bg-muted/30 border-transparent hover:bg-muted"
-                  }`}
-                >
-                  <span className="text-base">{p.icon}</span>
-                  <span className="flex-1">{p.name}</span>
-                </button>
-              ))}
+          <div className="chrome-panel p-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-extrabold text-primary">✨ קטלוג ריהוט ועיצוב (2.5D / 3D / 2D)</label>
+              <span className="text-[10px] text-muted-foreground font-bold">{ALL_DECOR_PRESETS.length} אלמנטים</span>
             </div>
+
+            {/* Category Selector Tabs */}
+            <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto p-1 bg-muted/20 rounded-xl border border-border/50">
+              <button
+                type="button"
+                onClick={() => setDecorCategory("all")}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                  decorCategory === "all"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                🌟 הכל ({ALL_DECOR_PRESETS.length})
+              </button>
+              {DECOR_CATEGORIES.map((cat) => {
+                const count = ALL_DECOR_PRESETS.filter((p) => p.category === cat.key).length;
+                const isSelected = decorCategory === cat.key;
+                return (
+                  <button
+                    key={cat.key}
+                    type="button"
+                    onClick={() => setDecorCategory(cat.key)}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <span>{cat.icon}</span>
+                    <span>{cat.label} ({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Presets Grid */}
+            <div className="grid grid-cols-1 gap-1.5 max-h-60 overflow-y-auto pr-1">
+              {ALL_DECOR_PRESETS.filter((p) => decorCategory === "all" || p.category === decorCategory).map((p) => {
+                const isSelected = decorPresetId === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setDecorPresetId(p.id)}
+                    className={`flex items-start gap-2.5 p-2 rounded-xl text-xs text-right border transition-all ${
+                      isSelected
+                        ? "bg-secondary text-secondary-foreground border-secondary font-bold shadow-md"
+                        : "bg-muted/20 border-border/50 hover:bg-muted/50 text-foreground"
+                    }`}
+                  >
+                    <span className="text-xl shrink-0 mt-0.5">{p.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold flex items-center justify-between">
+                        <span>{p.name}</span>
+                        <span className="text-[10px] font-mono opacity-75">{p.w}x{p.d}</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">{p.desc}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="pt-2 border-t border-border">
-              <label className="block text-[11px] font-semibold text-muted-foreground mb-1">או תמונת עיטור אישית:</label>
+              <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                🖼️ הטבעת תמונה מותאמת (לשטיחים ותפאורה):
+              </label>
               <ImageUpload
                 folder="decor"
                 value={decorSprite}
                 onChange={(url) => setDecorSprite(url)}
-                label="העלה ספרייט"
+                label="העלה תמונה להטבעה על האלמנט / שטיח"
               />
             </div>
           </div>

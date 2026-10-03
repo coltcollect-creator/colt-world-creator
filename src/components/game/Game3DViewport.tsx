@@ -6,6 +6,8 @@ import type { MapObject } from "@/components/game/GameViewport";
 import { makeFloorCanvas, FLOOR_BASE_COLOR, FLOOR_TILE_SIZE, type FloorType } from "@/lib/floor-textures";
 import { instantiateGlb, fitModel } from "@/lib/glb-loader";
 import { useLivePositions } from "@/hooks/use-live-positions";
+import { ALL_DECOR_PRESETS } from "@/lib/decor-catalog";
+import { buildDecor3DGroup } from "@/lib/decor-3d-builder";
 
 type THREE_NS = typeof import("three");
 
@@ -446,30 +448,36 @@ export function Game3DViewport({
         }
 
         if (o.object_type === "door") {
-          const h = o.height || 220;
+          const dw = Math.max(w, 180);
+          const h = Math.max(o.height || 260, 260);
           const frame = new THREE.Group();
-          const mat = new THREE.MeshStandardMaterial({ color: 0xc99c6c, roughness: 0.8 });
+          const mat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.5 });
+          const glowMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, emissive: 0x0891b2, roughness: 0.2 });
+
           const post = (dx: number) => {
-            const m = new THREE.Mesh(new THREE.BoxGeometry(24, h, 24), mat);
+            const m = new THREE.Mesh(new THREE.BoxGeometry(26, h, 26), mat);
             m.position.set(dx, h / 2, 0);
             m.castShadow = true;
             return m;
           };
-          frame.add(post(-w / 2), post(w / 2));
-          const top = new THREE.Mesh(new THREE.BoxGeometry(w + 24, 28, 30), mat);
+          frame.add(post(-dw / 2), post(dw / 2));
+
+          const top = new THREE.Mesh(new THREE.BoxGeometry(dw + 30, 36, 32), glowMat);
           top.position.set(0, h, 0);
           top.castShadow = true;
           frame.add(top);
+
           const portal = new THREE.Mesh(
-            new THREE.PlaneGeometry(w, h * 0.9),
-            new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+            new THREE.PlaneGeometry(dw - 10, h * 0.92),
+            new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
           );
-          portal.position.set(0, h * 0.45, 0);
+          portal.position.set(0, h * 0.46, 0);
           frame.add(portal);
           frame.position.set(cx, 0, cz);
           scene.add(frame);
-          const label = (o.metadata?.label as string) || "דלת";
-          addLabel(label, cx, h + 70, cz, 0.8);
+
+          const label = (o.metadata?.label as string) || "שער מעבר";
+          addLabel(`🚪 ${label}`, cx, h + 80, cz, 0.9);
           interactives.push({ kind: "door", id: o.id, name: label, x: cx, z: cz, targetMapId: o.metadata?.target_map_id as string | undefined });
           pickables.push({ mesh: portal, kind: "door", id: o.id, targetMapId: o.metadata?.target_map_id as string | undefined });
           continue;
@@ -545,21 +553,34 @@ export function Game3DViewport({
         }
 
         if (o.object_type === "decor") {
-          const tex = texture(o.metadata?.sprite_url ?? null);
-          const h = o.height || 120;
-          if (tex) {
-            const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-            sp.scale.set(h, h, 1);
-            sp.position.set(cx, h / 2, cz);
-            scene.add(sp);
-          } else {
-            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(10, 14, h * 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x8b5a3c }));
-            trunk.position.set(cx, h * 0.25, cz);
-            const crown = new THREE.Mesh(new THREE.SphereGeometry(h * 0.35, 12, 12), new THREE.MeshStandardMaterial({ color: 0x22c55e }));
-            crown.position.set(cx, h * 0.62, cz);
-            crown.castShadow = true;
-            scene.add(trunk, crown);
+          const presetId = (o.metadata?.preset as string) || "";
+          const preset = ALL_DECOR_PRESETS.find((p) => p.id === presetId) || ALL_DECOR_PRESETS[0];
+          const texUrl = (o.metadata?.image_url as string) || (o.metadata?.sprite_url as string);
+
+          if (texUrl && !preset.allowCustomImage) {
+            const tex = texture(texUrl);
+            const h = o.height || preset.h || 120;
+            if (tex) {
+              const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+              sp.scale.set(h, h, 1);
+              sp.position.set(cx, h / 2, cz);
+              scene.add(sp);
+              continue;
+            }
           }
+
+          const decorMesh = buildDecor3DGroup(
+            THREE,
+            preset,
+            w || preset.w,
+            d || preset.d,
+            o.height || preset.h,
+            o.metadata ?? {}
+          );
+          decorMesh.position.set(cx, 0, cz);
+          const rotY = (o.metadata?.rotation_y as number) ?? (o.metadata?.rotation_deg ? (o.metadata.rotation_deg as number) * (Math.PI / 180) : 0);
+          decorMesh.rotation.y = rotY;
+          scene.add(decorMesh);
           continue;
         }
 

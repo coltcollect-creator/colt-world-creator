@@ -3,12 +3,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import type { MapObject } from "@/components/game/GameViewport";
 import { useLivePositions } from "@/hooks/use-live-positions";
-import { Sparkles, MessageCircle, Store, DoorOpen, Gift, Monitor, Box, ZoomIn, ZoomOut, RotateCcw, User } from "lucide-react";
-import { COOL_DECOR_PRESETS } from "@/components/owner/CoolEnvironmentEditor";
+import { Sparkles, MessageCircle, Store, DoorOpen, Gift, Monitor, Box, ZoomIn, ZoomOut, RotateCcw, RotateCw, User, Compass } from "lucide-react";
+import { ALL_DECOR_PRESETS, type DecorPresetItem } from "@/lib/decor-catalog";
+import { buildDecor3DGroup } from "@/lib/decor-3d-builder";
 import { createConventionCharacter3D, type Character3DInstance } from "@/lib/character-3d";
 import { makeFloorCanvas, FLOOR_TILE_SIZE, type FloorType } from "@/lib/floor-textures";
 import { instantiateGlb, fitModel } from "@/lib/glb-loader";
 import { PLAYER_W, PLAYER_H } from "@/lib/avatar-layout";
+import { FogOfWarMinimap } from "@/components/game/FogOfWarMinimap";
+import {
+  loadDiscoveredCells,
+  saveDiscoveredCells,
+  revealFogCircle,
+  FOW_CELL_SIZE,
+  FOW_REVEAL_RADIUS,
+} from "@/lib/fog-of-war";
 
 type THREE_NS = typeof import("three");
 
@@ -101,6 +110,9 @@ export function CoolEnvironmentViewport({
   const liveRef = useRef(live);
   liveRef.current = live;
 
+  const worldW = width || 2400;
+  const worldD = height || 1800;
+
   const [activeNearby, setActiveNearby] = useState<Nearby>(null);
   const activeNearbyRef = useRef<Nearby>(null);
   activeNearbyRef.current = activeNearby;
@@ -115,6 +127,47 @@ export function CoolEnvironmentViewport({
   const [zoomFactor, setZoomFactor] = useState<number>(DEFAULT_ZOOM);
   const zoomFactorRef = useRef<number>(DEFAULT_ZOOM);
   zoomFactorRef.current = zoomFactor;
+
+  // Fog of War (Heroes of Might & Magic style persistence per user & map)
+  const [discoveredCells, setDiscoveredCells] = useState<Set<number>>(() => loadDiscoveredCells(user?.id, mapId));
+  const discoveredCellsRef = useRef(discoveredCells);
+  discoveredCellsRef.current = discoveredCells;
+
+  useEffect(() => {
+    const loaded = loadDiscoveredCells(user?.id, mapId);
+    setDiscoveredCells(loaded);
+    discoveredCellsRef.current = loaded;
+  }, [user?.id, mapId]);
+
+  // Maps list for minimap portal labels
+  const [mapsList, setMapsList] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    supabase.from("maps").select("id, name").then(({ data }) => {
+      if (data) setMapsList(data);
+    });
+  }, []);
+
+  // Camera orbital rotation (Q / E 360-degree smooth perspective)
+  const [camAngle, setCamAngle] = useState<number>(0);
+  const camAngleRef = useRef<number>(0);
+  camAngleRef.current = camAngle;
+
+  // Realtime Player HUD coordinates for Minimap
+  const [hudPlayer, setHudPlayer] = useState({ x: 300, z: 300, facing: 0 });
+
+  // Rotate Camera Helpers
+  const handleRotateLeft = () => {
+    camAngleRef.current -= Math.PI / 6;
+    setCamAngle(camAngleRef.current);
+  };
+  const handleRotateRight = () => {
+    camAngleRef.current += Math.PI / 6;
+    setCamAngle(camAngleRef.current);
+  };
+  const handleResetCamera = () => {
+    camAngleRef.current = 0;
+    setCamAngle(0);
+  };
 
   // In 2.5D Cool Environment, ALL players (local and remote) uniformly embody
   // the official Colt Bot mascot with the iconic purple hoodie and golden "C" emblem.
@@ -376,12 +429,12 @@ export function CoolEnvironmentViewport({
         const oz = obj.y + od / 2;
 
         if (obj.object_type === "room") {
-          // 🏠 The Sims Style Room with Solid Walls & Open Entrance Door
+          // 🏠 The Sims Style Room with Grand Solid Walls & Majestic Open Entrance Door
           const rx = obj.x;
           const rz = obj.y;
           const rw = ow;
           const rd = od;
-          const wallH = (meta.wall_height as number) || 65;
+          const wallH = (meta.wall_height as number) || 85;
           const wallCol = (meta.wall_color as string) || "#0284c7";
           const roomFlrCol = (meta.floor_color as string) || "#0f172a";
           const rName = (meta.room_name as string) || (meta.label as string) || "חדר";
@@ -396,7 +449,7 @@ export function CoolEnvironmentViewport({
           roomGroup.add(rFlrMesh);
 
           const wallMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(wallCol), roughness: 0.45 });
-          const wallThick = 12;
+          const wallThick = 14;
 
           // North Wall (Back) - Solid
           const northWall = new THREE.Mesh(new THREE.BoxGeometry(rw, wallH, wallThick), wallMat);
@@ -415,15 +468,15 @@ export function CoolEnvironmentViewport({
           solidBoxes.push({ minX: rx - wallThick / 2, maxX: rx + wallThick / 2, minZ: rz, maxZ: rz + rd });
 
           // East Wall (Right low wall) - Solid
-          const lowWallH = wallH * 0.35;
+          const lowWallH = wallH * 0.4;
           const eastWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, lowWallH, rd), wallMat);
           eastWall.position.set(rx + rw, lowWallH / 2, rz + rd / 2);
           eastWall.castShadow = true;
           roomGroup.add(eastWall);
           solidBoxes.push({ minX: rx + rw - wallThick / 2, maxX: rx + rw + wallThick / 2, minZ: rz, maxZ: rz + rd });
 
-          // South Wall (Front wall) with Open Entrance Doorway
-          const doorW = 110;
+          // South Wall (Front wall) with Grand Open Entrance Doorway (Tall & Wide)
+          const doorW = 190;
           const sideW = Math.max(16, (rw - doorW) / 2);
 
           // South Left Wall - Solid
@@ -440,47 +493,79 @@ export function CoolEnvironmentViewport({
           roomGroup.add(southRight);
           solidBoxes.push({ minX: rx + rw - sideW, maxX: rx + rw, minZ: rz + rd - wallThick / 2, maxZ: rz + rd + wallThick / 2 });
 
-          // 🚪 Visual Open Door Frame & Door Indication (Door is ALWAYS open, in room's chosen color)
-          const doorPostGeo = new THREE.BoxGeometry(8, wallH * 0.95, wallThick + 4);
-          const doorPostMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(wallCol), roughness: 0.35, metalness: 0.15 });
+          // 🚪 Grand Open Door Frame & Door Indication (Extra Large & Tall, open, matching room wallCol)
+          const doorPostH = wallH * 1.65; // Extra tall grand portal entrance
+          const doorPostGeo = new THREE.BoxGeometry(14, doorPostH, wallThick + 8);
+          const doorPostMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(wallCol), roughness: 0.25, metalness: 0.3 });
 
           // Left Doorpost
           const leftPost = new THREE.Mesh(doorPostGeo, doorPostMat);
-          leftPost.position.set(rx + sideW, (wallH * 0.95) / 2, rz + rd);
+          leftPost.position.set(rx + sideW, doorPostH / 2, rz + rd);
           leftPost.castShadow = true;
           roomGroup.add(leftPost);
 
           // Right Doorpost
           const rightPost = new THREE.Mesh(doorPostGeo, doorPostMat);
-          rightPost.position.set(rx + rw - sideW, (wallH * 0.95) / 2, rz + rd);
+          rightPost.position.set(rx + rw - sideW, doorPostH / 2, rz + rd);
           rightPost.castShadow = true;
           roomGroup.add(rightPost);
 
-          // Door Top Lintel
-          const lintelGeo = new THREE.BoxGeometry(doorW + 8, 10, wallThick + 4);
+          // Door Top Lintel & Grand Arch Beam
+          const lintelGeo = new THREE.BoxGeometry(doorW + 18, 18, wallThick + 8);
           const lintel = new THREE.Mesh(lintelGeo, doorPostMat);
-          lintel.position.set(rx + rw / 2, wallH * 0.95 - 5, rz + rd);
+          lintel.position.set(rx + rw / 2, doorPostH - 9, rz + rd);
           lintel.castShadow = true;
           roomGroup.add(lintel);
 
-          // Open Door Leaf (hinged on left doorpost, swung inward at 45° angle, matching wallCol)
-          const doorLeafW = doorW * 0.46;
-          const doorLeafH = wallH * 0.84;
-          const doorLeafGeo = new THREE.BoxGeometry(doorLeafW, doorLeafH, 4);
-          const doorLeafMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(wallCol), roughness: 0.3 });
+          // Open Door Leaf (hinged on left doorpost, swung inward at 50° angle, tall & majestic matching wallCol)
+          const doorLeafW = 85;
+          const doorLeafH = doorPostH * 0.92;
+          const doorLeafGeo = new THREE.BoxGeometry(doorLeafW, doorLeafH, 6);
+          const doorLeafMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(wallCol), roughness: 0.2, metalness: 0.15 });
           const doorLeaf = new THREE.Mesh(doorLeafGeo, doorLeafMat);
-          doorLeaf.position.set(rx + sideW + (doorLeafW / 2) * Math.SQRT1_2, doorLeafH / 2, rz + rd - (doorLeafW / 2) * Math.SQRT1_2);
-          doorLeaf.rotation.y = -Math.PI / 4;
+          doorLeaf.position.set(rx + sideW + (doorLeafW / 2) * 0.7, doorLeafH / 2, rz + rd - (doorLeafW / 2) * 0.7);
+          doorLeaf.rotation.y = -Math.PI / 3.5;
           doorLeaf.castShadow = true;
           roomGroup.add(doorLeaf);
 
-          // Entrance Threshold / Welcome Step
-          const threshGeo = new THREE.PlaneGeometry(doorW - 8, 22);
-          const threshMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(wallCol), roughness: 0.2 });
-          const thresh = new THREE.Mesh(threshGeo, threshMat);
-          thresh.rotation.x = -Math.PI / 2;
-          thresh.position.set(rx + rw / 2, 2.0, rz + rd);
-          roomGroup.add(thresh);
+          // Golden Door Handle
+          const handleMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.2 });
+          const doorHandle = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 16), handleMat);
+          doorHandle.position.set(rx + sideW + doorLeafW * 0.65, doorLeafH * 0.48, rz + rd - doorLeafW * 0.65 + 4);
+          doorHandle.rotation.z = Math.PI / 2;
+          roomGroup.add(doorHandle);
+
+          // Glowing Entrance Floor Threshold Strip
+          const thresholdMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(wallCol), transparent: true, opacity: 0.85 });
+          const thresholdMesh = new THREE.Mesh(new THREE.PlaneGeometry(doorW - 8, 22), thresholdMat);
+          thresholdMesh.rotation.x = -Math.PI / 2;
+          thresholdMesh.position.set(rx + rw / 2, 2.2, rz + rd);
+          roomGroup.add(thresholdMesh);
+
+          // Grand Door Sign
+          const dSignCanvas = document.createElement("canvas");
+          dSignCanvas.width = 300;
+          dSignCanvas.height = 70;
+          const dCtx = dSignCanvas.getContext("2d");
+          if (dCtx) {
+            dCtx.fillStyle = "rgba(15, 23, 42, 0.92)";
+            safeRoundRect(dCtx, 6, 6, 288, 58, 14);
+            dCtx.fill();
+            dCtx.strokeStyle = wallCol;
+            dCtx.lineWidth = 3;
+            dCtx.stroke();
+            dCtx.fillStyle = "#ffffff";
+            dCtx.font = "bold 26px sans-serif";
+            dCtx.textAlign = "center";
+            dCtx.textBaseline = "middle";
+            dCtx.fillText(`🚪 כניסה: ${rName}`, 150, 35);
+
+            const dTex = new THREE.CanvasTexture(dSignCanvas);
+            const dSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: dTex, transparent: true }));
+            dSprite.scale.set(130, 30, 1);
+            dSprite.position.set(rx + rw / 2, doorPostH + 25, rz + rd);
+            roomGroup.add(dSprite);
+          }
 
           // Floating Room Label
           const rCanvas = document.createElement("canvas");
@@ -693,26 +778,67 @@ export function CoolEnvironmentViewport({
           scene.add(chestGroup);
         } else if (obj.object_type === "door") {
           const targetMapId = meta.target_map_id as string;
-          interactables.push({ kind: "door", id: obj.id, name: "שער מעבר", x: ox, z: oz, targetMapId });
+          const targetName = (meta.label as string) || "שער מעבר";
+          interactables.push({ kind: "door", id: obj.id, name: targetName, x: ox, z: oz, targetMapId });
 
           const doorGroup = new THREE.Group();
           doorGroup.position.set(ox, 0, oz);
+          const rotY = (meta.rotation_y as number) ?? 0;
+          doorGroup.rotation.y = rotY;
 
-          const archGeo = new THREE.TorusGeometry(50, 8, 8, 24, Math.PI);
-          const archMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, emissive: 0x0891b2, roughness: 0.2 });
+          // Grand Majestic Portal Gateway Arch (Taller and Wider)
+          const archGeo = new THREE.TorusGeometry(95, 14, 14, 32, Math.PI);
+          const archMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, emissive: 0x0891b2, roughness: 0.15, metalness: 0.5 });
           const arch = new THREE.Mesh(archGeo, archMat);
-          arch.position.y = 50;
+          arch.position.y = 110;
           doorGroup.add(arch);
 
+          // Portal Pillars Left & Right
+          const pillarGeo = new THREE.BoxGeometry(22, 115, 22);
+          const pMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.7, roughness: 0.3 });
+          const pillarL = new THREE.Mesh(pillarGeo, pMat);
+          pillarL.position.set(-95, 57.5, 0);
+          doorGroup.add(pillarL);
+
+          const pillarR = new THREE.Mesh(pillarGeo, pMat);
+          pillarR.position.set(95, 57.5, 0);
+          doorGroup.add(pillarR);
+
+          // Swirling Vortex Disc
           const portalDisc = new THREE.Mesh(
-            new THREE.CircleGeometry(42, 16),
-            new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.6, side: THREE.DoubleSide })
+            new THREE.CircleGeometry(85, 28),
+            new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
           );
-          portalDisc.position.y = 50;
+          portalDisc.position.y = 110;
           doorGroup.add(portalDisc);
 
+          // Floating Grand Portal Sign
+          const pSignCanvas = document.createElement("canvas");
+          pSignCanvas.width = 400;
+          pSignCanvas.height = 90;
+          const psCtx = pSignCanvas.getContext("2d");
+          if (psCtx) {
+            psCtx.fillStyle = "rgba(15, 23, 42, 0.94)";
+            safeRoundRect(psCtx, 8, 8, 384, 74, 18);
+            psCtx.fill();
+            psCtx.strokeStyle = "#22d3ee";
+            psCtx.lineWidth = 4;
+            psCtx.stroke();
+            psCtx.fillStyle = "#ffffff";
+            psCtx.font = "bold 32px sans-serif";
+            psCtx.textAlign = "center";
+            psCtx.textBaseline = "middle";
+            psCtx.fillText(`🚪 ${targetName}`, 200, 45);
+
+            const psTex = new THREE.CanvasTexture(pSignCanvas);
+            const psSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: psTex, transparent: true }));
+            psSprite.scale.set(190, 42, 1);
+            psSprite.position.set(0, 235, 0);
+            doorGroup.add(psSprite);
+          }
+
           doorGroup.userData = {
-            interactable: { kind: "door", id: obj.id, name: "שער מעבר", targetMapId },
+            interactable: { kind: "door", id: obj.id, name: targetName, targetMapId },
           };
           clickableObjects.push(doorGroup);
           scene.add(doorGroup);
@@ -827,17 +953,17 @@ export function CoolEnvironmentViewport({
           const rotD = ow * sinR + 25 * cosR;
           solidBoxes.push({ minX: ox - rotW / 2, maxX: ox + rotW / 2, minZ: oz - rotD / 2, maxZ: oz + rotD / 2 });
         } else {
-          // Decor / Furniture Element
+          // Decor / Furniture Element (supports all 33+ comprehensive presets across categories)
           const decorImageUrl = (meta.image_url as string) || (meta.sprite_url as string);
           const presetId = meta.preset as string;
-          const preset = COOL_DECOR_PRESETS.find((p) => p.id === presetId) || COOL_DECOR_PRESETS[0];
+          const preset = ALL_DECOR_PRESETS.find((p) => p.id === presetId) || ALL_DECOR_PRESETS[0];
 
           const decorGroup = new THREE.Group();
           decorGroup.position.set(ox, 0, oz);
           const rotY = (meta.rotation_y as number) ?? (meta.rotation_deg ? (meta.rotation_deg as number) * (Math.PI / 180) : 0);
           decorGroup.rotation.y = rotY;
 
-          if (decorImageUrl) {
+          if (decorImageUrl && !preset.allowCustomImage) {
             const planeW = ow || 120;
             const planeH = oh || 120;
 
@@ -863,32 +989,10 @@ export function CoolEnvironmentViewport({
             shadowMesh.rotation.x = -Math.PI / 2;
             shadowMesh.position.y = 1;
             decorGroup.add(shadowMesh);
-          } else if (preset.id === "cyber_tree") {
-            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(8, 12, 60), new THREE.MeshStandardMaterial({ color: 0x334155 }));
-            trunk.position.y = 30;
-            trunk.castShadow = true;
-            decorGroup.add(trunk);
-
-            const foliage = new THREE.Mesh(new THREE.ConeGeometry(50, 100, 6), new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3 }));
-            foliage.position.y = 100;
-            foliage.castShadow = true;
-            decorGroup.add(foliage);
-          } else if (preset.id === "neon_pillar") {
-            const pillar = new THREE.Mesh(
-              new THREE.CylinderGeometry(15, 15, 160, 8),
-              new THREE.MeshStandardMaterial({ color: 0xec4899, emissive: 0xdb2777, roughness: 0.2 })
-            );
-            pillar.position.y = 80;
-            pillar.castShadow = true;
-            decorGroup.add(pillar);
           } else {
-            const box = new THREE.Mesh(
-              new THREE.BoxGeometry(ow, preset.h || 80, od),
-              new THREE.MeshStandardMaterial({ color: new THREE.Color(preset.color || "#a855f7"), roughness: 0.4 })
-            );
-            box.position.y = (preset.h || 80) / 2;
-            box.castShadow = true;
-            decorGroup.add(box);
+            // Build rich procedural 3D furniture/decor from catalog
+            const builtMesh = buildDecor3DGroup(THREE, preset, ow, od, oh, meta);
+            decorGroup.add(builtMesh);
           }
 
           scene.add(decorGroup);
@@ -901,6 +1005,14 @@ export function CoolEnvironmentViewport({
       const spawnObj = objects.find((o) => o.object_type === "spawn");
       let playerX = spawnObj?.x ?? mapW / 2;
       let playerZ = spawnObj?.y ?? mapD / 2;
+
+      // Reveal initial fog around spawn immediately
+      const initCols = Math.ceil(mapW / FOW_CELL_SIZE);
+      const initRows = Math.ceil(mapD / FOW_CELL_SIZE);
+      revealFogCircle(discoveredCellsRef.current, playerX, playerZ, FOW_REVEAL_RADIUS, initCols, initRows);
+      saveDiscoveredCells(user?.id, mapId, discoveredCellsRef.current);
+      setDiscoveredCells(new Set(discoveredCellsRef.current));
+      setHudPlayer({ x: Math.round(playerX), z: Math.round(playerZ), facing: 0 });
 
       const playerPivot = new THREE.Group();
       playerPivot.position.set(playerX, 0, playerZ);
@@ -1003,6 +1115,7 @@ export function CoolEnvironmentViewport({
 
       // Animation & Movement Loop
       let lastTime = performance.now();
+      let lastHudSync = 0;
       const SPEED = 8.2;
 
       const animate = () => {
@@ -1012,18 +1125,36 @@ export function CoolEnvironmentViewport({
         const dt = Math.min(0.06, Math.max(0.001, (now - lastTime) / 1000));
         lastTime = now;
 
-        // Determine Movement Vector
-        let moveX = 0;
-        let moveZ = 0;
+        // Camera Orbital Rotation with Q and E keys (smooth 360° perspective view)
+        const ROT_SPEED = 2.4;
+        if (keysDown.has("KeyQ")) {
+          camAngleRef.current -= ROT_SPEED * dt;
+        }
+        if (keysDown.has("KeyE") && !activeNearbyRef.current) {
+          camAngleRef.current += ROT_SPEED * dt;
+        }
 
-        if (keysDown.has("ArrowLeft") || keysDown.has("KeyA")) moveX -= 1;
-        if (keysDown.has("ArrowRight") || keysDown.has("KeyD")) moveX += 1;
-        if (keysDown.has("ArrowUp") || keysDown.has("KeyW")) moveZ -= 1;
-        if (keysDown.has("ArrowDown") || keysDown.has("KeyS")) moveZ += 1;
+        // Determine Movement Vector relative to current Camera View Angle
+        const curAngle = camAngleRef.current;
+        let rawMoveX = 0;
+        let rawMoveZ = 0;
+
+        if (keysDown.has("ArrowLeft") || keysDown.has("KeyA")) rawMoveX -= 1;
+        if (keysDown.has("ArrowRight") || keysDown.has("KeyD")) rawMoveX += 1;
+        if (keysDown.has("ArrowUp") || keysDown.has("KeyW")) rawMoveZ -= 1;
+        if (keysDown.has("ArrowDown") || keysDown.has("KeyS")) rawMoveZ += 1;
 
         if (touchInputRef?.current) {
-          if (touchInputRef.current.x) moveX += touchInputRef.current.x;
-          if (touchInputRef.current.y) moveZ += touchInputRef.current.y;
+          if (touchInputRef.current.x) rawMoveX += touchInputRef.current.x;
+          if (touchInputRef.current.y) rawMoveZ += touchInputRef.current.y;
+        }
+
+        let moveX = 0;
+        let moveZ = 0;
+        if (rawMoveX !== 0 || rawMoveZ !== 0) {
+          // Camera-relative isometric translation
+          moveX = rawMoveX * Math.cos(curAngle) + rawMoveZ * Math.sin(curAngle);
+          moveZ = -rawMoveX * Math.sin(curAngle) + rawMoveZ * Math.cos(curAngle);
         }
 
         let nextX = playerX;
@@ -1162,16 +1293,45 @@ export function CoolEnvironmentViewport({
 
         playerPivot.position.set(playerX, 0, playerZ);
 
-        // Dynamic Camera Distance with Zoom In / Out
-        // Default baseline distance is further away (~1100 to 1350)
+        // Dynamic Camera Distance with Zoom In / Out & Smooth Orbit Rotation
         const currentZoom = zoomFactorRef.current;
         const baseOffsetY = 780;
         const baseOffsetZ = 920;
+        const camDist = baseOffsetZ * currentZoom;
         const camOffsetY = baseOffsetY * currentZoom;
-        const camOffsetZ = baseOffsetZ * currentZoom;
 
-        camera.position.set(playerX, camOffsetY, playerZ + camOffsetZ);
+        const camX = playerX + Math.sin(curAngle) * camDist;
+        const camZ = playerZ + Math.cos(curAngle) * camDist;
+
+        camera.position.set(camX, camOffsetY, camZ);
         camera.lookAt(playerX, PLAYER_H * 0.45, playerZ);
+
+        // Fog of War Discovery & Persistence (Heroes-style uncovering)
+        const fowCols = Math.ceil(mapW / FOW_CELL_SIZE);
+        const fowRows = Math.ceil(mapD / FOW_CELL_SIZE);
+        const discoveredChanged = revealFogCircle(
+          discoveredCellsRef.current,
+          playerX,
+          playerZ,
+          FOW_REVEAL_RADIUS,
+          fowCols,
+          fowRows
+        );
+        if (discoveredChanged) {
+          saveDiscoveredCells(user?.id, mapId, discoveredCellsRef.current);
+          setDiscoveredCells(new Set(discoveredCellsRef.current));
+        }
+
+        // Throttled HUD update for Minimap
+        if (now - lastHudSync > 60) {
+          lastHudSync = now;
+          setHudPlayer({
+            x: Math.round(playerX),
+            z: Math.round(playerZ),
+            facing: localPlayer3D.getCurrentAngle(),
+          });
+          setCamAngle(curAngle);
+        }
 
         // Check nearby interactive items
         let closest: InteractableTarget | null = null;
@@ -1229,33 +1389,74 @@ export function CoolEnvironmentViewport({
       {/* 3D Canvas Host */}
       <div ref={hostRef} className="w-full h-full" />
 
-      {/* Floating Zoom Controls (+ / - / Reset) */}
-      <div className="absolute bottom-6 right-6 z-20 flex items-center gap-1.5 bg-black/75 backdrop-blur-md p-1.5 rounded-2xl border border-white/15 shadow-xl text-white">
-        <button
-          onClick={handleZoomIn}
-          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white"
-          title="התקרב (זום אין)"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-        <span className="text-xs font-mono px-1.5 text-white/90 font-bold min-w-[42px] text-center">
-          {Math.round((1 / zoomFactor) * 100)}%
-        </span>
-        <button
-          onClick={handleZoomOut}
-          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white"
-          title="התרחק (זום אאוט)"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-        <div className="h-4 w-[1px] bg-white/20 mx-0.5" />
-        <button
-          onClick={handleResetZoom}
-          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white"
-          title="איפוס זום"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-        </button>
+      {/* 🗺️ Fog of War Minimap HUD at Bottom-Left (Heroes of Might & Magic Style with Discovery & Modal) */}
+      <div className="absolute bottom-6 left-6 z-20">
+        <FogOfWarMinimap
+          mapW={worldW}
+          mapD={worldD}
+          playerX={hudPlayer.x}
+          playerZ={hudPlayer.z}
+          playerFacing={hudPlayer.facing}
+          camAngle={camAngle}
+          discoveredCells={discoveredCells}
+          objects={objects}
+          stores={stores}
+          npcs={npcs}
+          maps={mapsList}
+          floorColor={floorColor}
+          backgroundTheme={backgroundTheme}
+        />
+      </div>
+
+      {/* Floating Controls Bar at Bottom-Right: Camera Perspective (Q / E) & Zoom */}
+      <div className="absolute bottom-6 right-6 z-20 flex items-center gap-2">
+        {/* Camera Perspective 360° Controls */}
+        <div className="flex items-center gap-1 bg-black/75 backdrop-blur-md p-1.5 rounded-2xl border border-white/15 shadow-xl text-white">
+          <button
+            onClick={handleRotateLeft}
+            className="px-2 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white flex items-center gap-1 text-xs font-bold"
+            title="סובב מבט שמאלה [מקש Q]"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="font-mono text-[10px] hidden sm:inline">Q</span>
+          </button>
+          <button
+            onClick={handleResetCamera}
+            className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 active:scale-95 transition-all text-white/80"
+            title="איפוס נקודת מבט לחזית"
+          >
+            <Compass className="w-3.5 h-3.5 text-white/70" />
+          </button>
+          <button
+            onClick={handleRotateRight}
+            className="px-2 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white flex items-center gap-1 text-xs font-bold"
+            title="סובב מבט ימינה [מקש E]"
+          >
+            <span className="font-mono text-[10px] hidden sm:inline">E</span>
+            <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
+          </button>
+        </div>
+
+        {/* Zoom Controls (+ / - / Reset) */}
+        <div className="flex items-center gap-1 bg-black/75 backdrop-blur-md p-1.5 rounded-2xl border border-white/15 shadow-xl text-white">
+          <button
+            onClick={handleZoomIn}
+            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white"
+            title="התקרב (זום אין)"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <span className="text-xs font-mono px-1.5 text-white/90 font-bold min-w-[38px] text-center">
+            {Math.round((1 / zoomFactor) * 100)}%
+          </span>
+          <button
+            onClick={handleZoomOut}
+            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white"
+            title="התרחק (זום אאוט)"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Floating Near-Object Action Prompt */}
@@ -1291,19 +1492,19 @@ export function CoolEnvironmentViewport({
             }}
             className="btn-plastic !px-4 !py-1.5 text-xs font-bold mr-2"
           >
-            {activeNearby.kind === "screen" ? "צפה במסך [E]" : "פתח / דבר [E]"}
+            {activeNearby.kind === "screen" ? "צפה במסך [רווח/E]" : "פתח / דבר [רווח/E]"}
           </button>
         </div>
       )}
 
-      {/* Movement Controls Guide & Badge */}
+      {/* Movement & View Controls Guide & Badge */}
       <div className="absolute top-4 left-4 z-10 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-white text-xs">
         <User className="w-4 h-4 text-purple-400 animate-pulse" />
-        <span>✨ סביבה מגניבה (דמות תלת-מימד אמיתית - הליכה חלקה)</span>
+        <span>✨ סביבה מגניבה (נקודת מבט 360° חופשית | ערפל קרב מתגלה)</span>
       </div>
 
       <div className="absolute top-4 right-4 z-10 hidden md:flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-white/10 text-white/80 text-[11px]">
-        <span>🖱️ זום עם גלגלת העכבר | ⌨️ תנועה: חיצים / WASD או לחיצה על הרצפה</span>
+        <span>🔄 סיבוב מבט: Q / E | ⌨️ תנועה: WASD / חיצים | 🗺️ לחץ על המפה לפתיחה מלאה</span>
       </div>
     </div>
   );

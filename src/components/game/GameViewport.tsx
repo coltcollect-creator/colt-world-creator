@@ -7,6 +7,8 @@ import { trackQuestAction } from "@/lib/quest-events";
 import { db } from "@/lib/firebase";
 import { collection, doc, setDoc, deleteDoc, query, where, onSnapshot } from "firebase/firestore";
 import { renderAnimatedMapBackground } from "@/lib/map-backgrounds";
+import { ALL_DECOR_PRESETS } from "@/lib/decor-catalog";
+import { drawDecor2DPreset } from "@/lib/decor-2d-drawer";
 
 // Pre-cached starter characters with full asset URLs
 const STARTER_CHARACTER_SPRITES: Record<string, { right: string; left: string | null; jump: string | null; idle: string }> = {
@@ -486,13 +488,19 @@ export function GameViewport({
       ctx.translate(-s.camX, -s.camY);
       // Decor (background layer)
       for (const d of decor) {
-        const img = getImg(d.metadata?.sprite_url);
-        if (img && img.complete && img.naturalWidth) {
+        const imgUrl = (d.metadata?.image_url as string) || (d.metadata?.sprite_url as string);
+        const img = getImg(imgUrl);
+        const presetId = (d.metadata?.preset as string) || "";
+        const preset = ALL_DECOR_PRESETS.find((p) => p.id === presetId);
+
+        if (preset) {
+          drawDecor2DPreset(ctx, preset, d.x, d.y, d.width, d.height, img);
+        } else if (img && img.complete && img.naturalWidth) {
           ctx.drawImage(img, d.x, d.y, d.width, d.height);
         } else {
-          const preset = (d.metadata?.preset as string) || "";
-          if (preset) drawDecorPreset(preset, d.x, d.y, d.width, d.height);
-          else { ctx.fillStyle = (d.metadata?.color as string) || "#f5c6ea"; roundRect(ctx, d.x, d.y, d.width, d.height, 12); ctx.fill(); }
+          ctx.fillStyle = (d.metadata?.color as string) || "#f5c6ea";
+          roundRect(ctx, d.x, d.y, d.width, d.height, 12);
+          ctx.fill();
         }
       }
       // Screens (background info panels)
@@ -538,18 +546,57 @@ export function GameViewport({
         ctx.fillStyle = topCol;
         roundRect(ctx, p.x, p.y - 3, p.width, 8, 4); ctx.fill();
       }
-      // Doors
+      // Grand Doors & Portals (Cleanly placed at exact map coordinates with glowing arch & frame)
       for (const d of doors) {
-        ctx.fillStyle = "#8b5a3c";
-        roundRect(ctx, d.x, d.y, d.width || 48, d.height || 72, 6); ctx.fill();
-        ctx.fillStyle = "#c99c6c";
-        roundRect(ctx, d.x + 4, d.y + 4, (d.width || 48) - 8, (d.height || 72) - 8, 4); ctx.fill();
-        ctx.fillStyle = "#f7c948";
-        ctx.beginPath(); ctx.arc(d.x + (d.width || 48) - 10, d.y + (d.height || 72) / 2, 3, 0, Math.PI * 2); ctx.fill();
-        if (d.metadata?.label) {
-          ctx.fillStyle = "#3b1f4a"; ctx.font = "bold 12px Fredoka, system-ui"; ctx.textAlign = "center";
-          ctx.fillText(d.metadata.label as string, d.x + (d.width || 48) / 2, d.y - 6);
-        }
+        const dw = d.width || 48;
+        const dh = d.height || 72;
+        const drawX = d.x;
+        const drawY = d.y;
+        const cx = drawX + dw / 2;
+
+        // Outer glow & arch frame
+        ctx.fillStyle = "rgba(6, 182, 212, 0.25)";
+        ctx.beginPath();
+        ctx.arc(cx, drawY + dw / 2, dw * 0.55, Math.PI, 0);
+        ctx.rect(drawX - 2, drawY + dw / 2, dw + 4, dh - dw / 2);
+        ctx.fill();
+
+        // Portal Frame Posts
+        ctx.fillStyle = "#0f172a";
+        roundRect(ctx, drawX, drawY, dw, dh, 10);
+        ctx.fill();
+        ctx.strokeStyle = "#06b6d4";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // Inner glowing swirling doorway passage
+        const grad = ctx.createLinearGradient(cx, drawY, cx, drawY + dh);
+        grad.addColorStop(0, "#0891b2");
+        grad.addColorStop(0.5, "#22d3ee");
+        grad.addColorStop(1, "#3b82f6");
+        ctx.fillStyle = grad;
+        roundRect(ctx, drawX + 4, drawY + 4, dw - 8, dh - 8, 6);
+        ctx.fill();
+
+        // Golden Door handle
+        ctx.fillStyle = "#facc15";
+        ctx.beginPath();
+        ctx.arc(drawX + dw * 0.75, drawY + dh * 0.55, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Door Label Floating Badge
+        const label = (d.metadata?.label as string) || "שער מעבר";
+        ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+        roundRect(ctx, cx - 55, drawY - 24, 110, 20, 6);
+        ctx.fill();
+        ctx.strokeStyle = "#22d3ee";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 11px Fredoka, system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(`🚪 ${label}`, cx, drawY - 10);
       }
       // Treasure boxes
       for (const tb of treasuresOnMap) {
@@ -569,36 +616,44 @@ export function GameViewport({
         ctx.fillStyle = "#4b1d5f"; ctx.font = "bold 14px Fredoka, system-ui"; ctx.textAlign = "center";
         ctx.fillText((tb.metadata?.label as string) || "תיבת אוצר", tb.x + w / 2, tb.y - 6);
       }
-      // Stores
-
+      // Stores with rotation support (45° angles etc.)
       for (const st of storesOnMap) {
         const sref = stores.find((x) => x.id === st.reference_id);
         const img = getImg(sref?.image_url || (st.metadata?.sprite_url as string | undefined));
+        const rot = (st.metadata?.rotation_y as number) ?? (st.metadata?.rotation_deg ? (st.metadata?.rotation_deg as number) * (Math.PI / 180) : 0);
+        const halfW = st.width / 2;
+        const halfH = st.height / 2;
+
+        ctx.save();
+        ctx.translate(st.x + halfW, st.y + halfH);
+        if (rot) ctx.rotate(rot);
+
         if (img && img.complete && img.naturalWidth) {
-          ctx.drawImage(img, st.x, st.y, st.width, st.height);
+          ctx.drawImage(img, -halfW, -halfH, st.width, st.height);
         } else {
-          // Cute storefront
+          // Cute storefront centered
           ctx.fillStyle = "#ffffff";
-          roundRect(ctx, st.x, st.y + 28, st.width, st.height - 28, 14); ctx.fill();
+          roundRect(ctx, -halfW, -halfH + 28, st.width, st.height - 28, 14); ctx.fill();
           ctx.strokeStyle = "#f472b6"; ctx.lineWidth = 4; ctx.stroke();
           // Awning stripes
           const stripes = Math.max(3, Math.floor(st.width / 28));
           for (let i = 0; i < stripes; i++) {
             ctx.fillStyle = i % 2 ? "#ec4899" : "#fbcfe8";
             ctx.beginPath();
-            ctx.moveTo(st.x + (i * st.width) / stripes, st.y);
-            ctx.lineTo(st.x + ((i + 1) * st.width) / stripes, st.y);
-            ctx.lineTo(st.x + ((i + 1) * st.width) / stripes - 8, st.y + 34);
-            ctx.lineTo(st.x + (i * st.width) / stripes - 8, st.y + 34);
+            ctx.moveTo(-halfW + (i * st.width) / stripes, -halfH);
+            ctx.lineTo(-halfW + ((i + 1) * st.width) / stripes, -halfH);
+            ctx.lineTo(-halfW + ((i + 1) * st.width) / stripes - 8, -halfH + 34);
+            ctx.lineTo(-halfW + (i * st.width) / stripes - 8, -halfH + 34);
             ctx.closePath(); ctx.fill();
           }
           // Door
           ctx.fillStyle = "#a78bfa";
-          roundRect(ctx, st.x + st.width / 2 - 22, st.y + st.height - 60, 44, 60, 6); ctx.fill();
+          roundRect(ctx, -22, halfH - 60, 44, 60, 6); ctx.fill();
         }
         ctx.fillStyle = "#4b1d5f"; ctx.font = "bold 20px Fredoka, system-ui";
         ctx.textAlign = "center";
-        ctx.fillText(sref?.name ?? "חנות", st.x + st.width / 2, st.y - 8);
+        ctx.fillText(sref?.name ?? "חנות", 0, -halfH - 8);
+        ctx.restore();
       }
       // NPCs (sprite-aware)
       for (const n of npcsOnMap) {

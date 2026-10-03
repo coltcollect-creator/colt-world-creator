@@ -8,6 +8,8 @@ import { ImageUpload } from "@/components/owner/ImageUpload";
 import { Map3DEditor } from "@/components/owner/Map3DEditor";
 import { CoolEnvironmentEditor } from "@/components/owner/CoolEnvironmentEditor";
 import { MAP_THEMES, renderAnimatedMapBackground, type MapBackgroundTheme } from "@/lib/map-backgrounds";
+import { ALL_DECOR_PRESETS, DECOR_CATEGORIES } from "@/lib/decor-catalog";
+import { drawDecor2DPreset } from "@/lib/decor-2d-drawer";
 
 
 export const Route = createFileRoute("/owner/map-editor")({ component: MapEditor });
@@ -74,7 +76,8 @@ function MapEditor() {
   const [pickerId, setPickerId] = useState<string>("");
   const [doorTarget, setDoorTarget] = useState<string>("");
   const [floorStyle, setFloorStyle] = useState<string>("grass");
-  const [decorPreset, setDecorPreset] = useState<string>("tree");
+  const [decorCategory, setDecorCategory] = useState<string>("all");
+  const [decorPreset, setDecorPreset] = useState<string>(ALL_DECOR_PRESETS[0].id);
   const [decorSprite, setDecorSprite] = useState<string | null>(null);
   const [screenContentType, setScreenContentType] = useState<"text" | "image">("text");
   const [screenText, setScreenText] = useState<string>("ברוכים הבאים!");
@@ -232,9 +235,57 @@ function MapEditor() {
     for (const o of objects as ObjRow[]) {
       const x = o.x * zoom, y = o.y * zoom, w = o.width * zoom, h = o.height * zoom;
       let fill = "#c7b3f7", label = o.object_type, topStrip: string | null = null;
-      if (o.object_type === "store") { fill = "#f9a8d4"; label = "🏪 " + (stores.find((s) => s.id === o.reference_id)?.name ?? "store"); }
+      if (o.object_type === "store") {
+        const sRef = stores.find((s) => s.id === o.reference_id);
+        const name = sRef?.name ?? (o.metadata?.label as string) ?? "חנות";
+        const rot = (o.metadata?.rotation_y as number) ?? (o.metadata?.rotation_deg ? (o.metadata?.rotation_deg as number) * (Math.PI / 180) : 0);
+
+        ctx.save();
+        ctx.translate(x + w / 2, y + h / 2);
+        if (rot) ctx.rotate(rot);
+
+        ctx.fillStyle = "#f9a8d4";
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+        ctx.strokeStyle = selectedId === o.id ? "#ec4899" : "rgba(0,0,0,0.4)";
+        ctx.lineWidth = selectedId === o.id ? 3 : 1;
+        ctx.strokeRect(-w / 2, -h / 2, w, h);
+
+        ctx.fillStyle = "#3b1f4a";
+        ctx.font = "bold 11px Fredoka, system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(`🏪 ${name}`, 0, 4);
+        ctx.restore();
+        continue;
+      }
       else if (o.object_type === "npc") { fill = "#a78bfa"; label = "🙋 " + (npcs.find((n) => n.id === o.reference_id)?.name ?? "npc"); }
-      else if (o.object_type === "door") { fill = "#c99c6c"; label = "🚪 " + ((o.metadata?.label as string) ?? "door"); }
+      else if (o.object_type === "door") {
+        // Frame
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = selectedId === o.id ? "#ec4899" : "#06b6d4";
+        ctx.lineWidth = selectedId === o.id ? 3 : 2;
+        ctx.strokeRect(x, y, w, h);
+
+        // Glowing Portal Gateway
+        const grd = ctx.createLinearGradient(x + w / 2, y, x + w / 2, y + h);
+        grd.addColorStop(0, "#0891b2");
+        grd.addColorStop(0.5, "#22d3ee");
+        grd.addColorStop(1, "#3b82f6");
+        ctx.fillStyle = grd;
+        ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+
+        // Gold Handle
+        ctx.fillStyle = "#facc15";
+        ctx.beginPath();
+        ctx.arc(x + w * 0.75, y + h * 0.55, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 11px Fredoka, system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("🚪 " + ((o.metadata?.label as string) ?? "שער"), x + w / 2, y - 6);
+        continue;
+      }
       else if (o.object_type === "platform") {
         const style = FLOOR_STYLES[(o.metadata?.style as string) || "grass"] ?? FLOOR_STYLES.grass;
         fill = style.color;
@@ -243,9 +294,18 @@ function MapEditor() {
       }
       else if (o.object_type === "spawn") { fill = "#facc15"; label = "★ spawn"; }
       else if (o.object_type === "decor") {
+        const preset = ALL_DECOR_PRESETS.find((p) => p.id === (o.metadata?.preset as string));
+        if (preset) {
+          drawDecor2DPreset(ctx, preset, x, y, w, h);
+          if (selectedId === o.id) {
+            ctx.strokeStyle = "#ec4899";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, w, h);
+          }
+          continue;
+        }
         fill = "#fbcfe8";
-        const preset = DECOR_PRESETS[(o.metadata?.preset as string) || ""];
-        label = preset?.emoji ?? "🌸";
+        label = "✨ תפאורה";
       }
       else if (o.object_type === "screen") {
         fill = (o.metadata?.bg as string) || "#1e1b4b";
@@ -290,7 +350,19 @@ function MapEditor() {
     }
     else if (tool === "spawn") payload = { ...base, object_type: "spawn", width: 32, height: 48 };
     else if (tool === "decor") {
-      payload = { ...base, object_type: "decor", width: 80, height: 80, metadata: { preset: decorPreset, sprite_url: decorSprite ?? undefined } };
+      const preset = ALL_DECOR_PRESETS.find((p) => p.id === decorPreset) || ALL_DECOR_PRESETS[0];
+      payload = {
+        ...base,
+        object_type: "decor",
+        width: preset.w || 100,
+        height: preset.h || 100,
+        metadata: {
+          preset: preset.id,
+          category: preset.category,
+          sprite_url: decorSprite ?? undefined,
+          image_url: decorSprite ?? undefined,
+        },
+      };
     }
     else if (tool === "screen") {
       const meta: Record<string, unknown> = {
@@ -329,8 +401,18 @@ function MapEditor() {
       if (!pickerId) { toast.error("Choose an NPC from the dropdown"); return; }
       payload = { ...base, object_type: "npc", width: 48, height: 72, interactive: true, reference_id: pickerId };
     } else if (tool === "door") {
-      if (!doorTarget) { toast.error("Choose target map for the door"); return; }
-      payload = { ...base, object_type: "door", width: 48, height: 72, interactive: true, metadata: { target_map_id: doorTarget, label: maps.find((m) => m.id === doorTarget)?.name ?? "Door" } };
+      if (!doorTarget) { toast.error("בחרו מפת יעד עבור הדלת"); return; }
+      payload = {
+        ...base,
+        object_type: "door",
+        width: 100,
+        height: 130,
+        interactive: true,
+        metadata: {
+          target_map_id: doorTarget,
+          label: maps.find((m) => m.id === doorTarget)?.name ?? "שער מעבר",
+        },
+      };
     }
     const { error } = await supabase.from("map_objects").insert(payload as never);
     if (error) toast.error(error.message);
@@ -506,12 +588,36 @@ function MapEditor() {
             {tool === "decor" && (
               <div className="mt-2 space-y-2">
                 <div>
-                  <label className="mb-1 block text-xs font-bold">סוג תפאורה</label>
-                  <select value={decorPreset} onChange={(e) => setDecorPreset(e.target.value)} className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-sm">
-                    {Object.entries(DECOR_PRESETS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                  <label className="mb-1 block text-xs font-bold">קטגוריית תפאורה</label>
+                  <select
+                    value={decorCategory}
+                    onChange={(e) => {
+                      const cat = e.target.value;
+                      setDecorCategory(cat);
+                      const firstInCat = ALL_DECOR_PRESETS.find((p) => cat === "all" || p.category === cat);
+                      if (firstInCat) setDecorPreset(firstInCat.id);
+                    }}
+                    className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs font-bold"
+                  >
+                    <option value="all">🌟 כל הקטגוריות ({ALL_DECOR_PRESETS.length})</option>
+                    {DECOR_CATEGORIES.map((cat) => (
+                      <option key={cat.key} value={cat.key}>{cat.icon} {cat.label}</option>
+                    ))}
                   </select>
                 </div>
-                <ImageUpload value={decorSprite} onChange={setDecorSprite} folder="decor" label="תמונה/GIF (אופציונלי)" />
+                <div>
+                  <label className="mb-1 block text-xs font-bold">אלמנט עיצובי מהקטלוג</label>
+                  <select
+                    value={decorPreset}
+                    onChange={(e) => setDecorPreset(e.target.value)}
+                    className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs font-bold"
+                  >
+                    {ALL_DECOR_PRESETS.filter((p) => decorCategory === "all" || p.category === decorCategory).map((p) => (
+                      <option key={p.id} value={p.id}>{p.icon} {p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <ImageUpload value={decorSprite} onChange={setDecorSprite} folder="decor" label="הטבעת תמונה מותאמת (לשטיחים ותפאורה)" />
               </div>
             )}
 
@@ -699,6 +805,50 @@ function MapEditor() {
                   <label>רוחב<input type="number" defaultValue={selected.width} onBlur={(e) => updateSelectedMeta({}, { width: parseInt(e.target.value, 10) || selected.width })} className="mt-1 w-full rounded-lg border-2 border-border bg-input px-2 py-1" /></label>
                   <label>גובה<input type="number" defaultValue={selected.height} onBlur={(e) => updateSelectedMeta({}, { height: parseInt(e.target.value, 10) || selected.height })} className="mt-1 w-full rounded-lg border-2 border-border bg-input px-2 py-1" /></label>
                 </div>
+
+                {/* 🔄 45-degree rotation controls */}
+                <div className="p-2 rounded-xl bg-card border border-border space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold">🔄 סיבוב אלמנט ב-45°</span>
+                    <span className="font-mono text-primary font-extrabold">
+                      {Math.round((((((selected.metadata?.rotation_y as number) ?? (selected.metadata?.rotation_deg ? (selected.metadata.rotation_deg as number) * (Math.PI / 180) : 0)) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) * (180 / Math.PI))}°
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cur = (selected.metadata?.rotation_y as number) ?? (selected.metadata?.rotation_deg ? (selected.metadata.rotation_deg as number) * (Math.PI / 180) : 0);
+                        const step = Math.PI / 4;
+                        const next = cur - step;
+                        const twoPi = Math.PI * 2;
+                        const norm = ((next % twoPi) + twoPi) % twoPi;
+                        const snapIndex = Math.round(norm / step) % 8;
+                        const snappedVal = snapIndex * step;
+                        updateSelectedMeta({ rotation_y: snappedVal, rotation_deg: snapIndex * 45 });
+                      }}
+                      className="btn-plastic !py-1 !px-2 text-[10px] font-bold flex items-center justify-center gap-1"
+                    >
+                      45°- שמאלה
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cur = (selected.metadata?.rotation_y as number) ?? (selected.metadata?.rotation_deg ? (selected.metadata.rotation_deg as number) * (Math.PI / 180) : 0);
+                        const step = Math.PI / 4;
+                        const next = cur + step;
+                        const twoPi = Math.PI * 2;
+                        const norm = ((next % twoPi) + twoPi) % twoPi;
+                        const snapIndex = Math.round(norm / step) % 8;
+                        const snappedVal = snapIndex * step;
+                        updateSelectedMeta({ rotation_y: snappedVal, rotation_deg: snapIndex * 45 });
+                      }}
+                      className="btn-plastic !py-1 !px-2 text-[10px] font-bold flex items-center justify-center gap-1"
+                    >
+                      45°+ ימינה
+                    </button>
+                  </div>
+                </div>
                 {selected.object_type === "platform" && (
                   <label className="block">סגנון
                     <select defaultValue={(selected.metadata?.style as string) || "grass"} onChange={(e) => updateSelectedMeta({ style: e.target.value })} className="mt-1 w-full rounded-lg border-2 border-border bg-input px-2 py-1">
@@ -708,12 +858,26 @@ function MapEditor() {
                 )}
                 {selected.object_type === "decor" && (
                   <>
-                    <label className="block">תפאורה
-                      <select defaultValue={(selected.metadata?.preset as string) || "tree"} onChange={(e) => updateSelectedMeta({ preset: e.target.value })} className="mt-1 w-full rounded-lg border-2 border-border bg-input px-2 py-1">
-                        {Object.entries(DECOR_PRESETS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                    <label className="block font-bold">אלמנט עיצובי מהקטלוג
+                      <select
+                        defaultValue={(selected.metadata?.preset as string) || ALL_DECOR_PRESETS[0].id}
+                        onChange={(e) => {
+                          const p = ALL_DECOR_PRESETS.find((item) => item.id === e.target.value);
+                          updateSelectedMeta({ preset: e.target.value, category: p?.category }, p ? { width: p.w, height: p.h } : undefined);
+                        }}
+                        className="mt-1 w-full rounded-lg border-2 border-border bg-input px-2 py-1 font-bold"
+                      >
+                        {ALL_DECOR_PRESETS.map((p) => (
+                          <option key={p.id} value={p.id}>{p.icon} {p.name}</option>
+                        ))}
                       </select>
                     </label>
-                    <ImageUpload value={(selected.metadata?.sprite_url as string) ?? null} onChange={(url) => updateSelectedMeta({ sprite_url: url ?? undefined })} folder="decor" label="תמונה/GIF" />
+                    <ImageUpload
+                      value={(selected.metadata?.image_url as string) ?? (selected.metadata?.sprite_url as string) ?? null}
+                      onChange={(url) => updateSelectedMeta({ sprite_url: url ?? undefined, image_url: url ?? undefined })}
+                      folder="decor"
+                      label="הטבעת תמונה / שטיח מותאם"
+                    />
                   </>
                 )}
                 {selected.object_type === "screen" && (
