@@ -1,8 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+const DEFAULT_PAYPAL_EMAIL = "info@astratego.com";
+const DEFAULT_PAYPAL_ENV = "live";
+
 function paypalBaseUrl() {
-  const env = (process.env.PAYPAL_ENV ?? "sandbox").toLowerCase();
+  const env = (process.env.PAYPAL_ENV ?? DEFAULT_PAYPAL_ENV).toLowerCase();
   return env === "live"
     ? "https://www.paypal.com/cgi-bin/webscr"
     : "https://www.sandbox.paypal.com/cgi-bin/webscr";
@@ -69,7 +72,7 @@ export const createGemPurchase = createServerFn({ method: "POST" })
       .single();
     if (oErr || !order) throw new Error(oErr?.message ?? "order create failed");
 
-    const merchantEmail = process.env.PAYPAL_MERCHANT_EMAIL;
+    const merchantEmail = process.env.PAYPAL_MERCHANT_EMAIL || DEFAULT_PAYPAL_EMAIL;
     if (!merchantEmail) throw new Error("paypal not configured");
 
     const params = new URLSearchParams({

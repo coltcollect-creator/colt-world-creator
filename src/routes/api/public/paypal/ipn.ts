@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+const DEFAULT_PAYPAL_EMAIL = "info@astratego.com";
+const DEFAULT_PAYPAL_ENV = "live";
+
 function paypalIpnValidateUrl() {
-  const env = (process.env.PAYPAL_ENV ?? "sandbox").toLowerCase();
+  const env = (process.env.PAYPAL_ENV ?? DEFAULT_PAYPAL_ENV).toLowerCase();
   return env === "live"
     ? "https://ipnpb.paypal.com/cgi-bin/webscr"
     : "https://ipnpb.sandbox.paypal.com/cgi-bin/webscr";
@@ -42,7 +45,7 @@ export const Route = createFileRoute("/api/public/paypal/ipn")({
         const mcCurrency = (fields.get("mc_currency") ?? "").toUpperCase();
 
         // Step 3: check merchant identity
-        const expectedEmail = normalizeEmail(process.env.PAYPAL_MERCHANT_EMAIL);
+        const expectedEmail = normalizeEmail(process.env.PAYPAL_MERCHANT_EMAIL || DEFAULT_PAYPAL_EMAIL);
         if (!expectedEmail || receiverEmail !== expectedEmail) {
           console.error("[paypal-ipn] receiver mismatch", { receiverEmail });
           return new Response("EMAIL_MISMATCH", { status: 200 });
