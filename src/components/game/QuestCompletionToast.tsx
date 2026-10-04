@@ -18,6 +18,21 @@ export function QuestCompletionToast() {
   useEffect(() => {
     if (!user) return;
 
+    // Load from localStorage to prevent re-triggering across refreshes
+    try {
+      const storedComp = localStorage.getItem(`colt_seen_completed_quests_${user.id}`);
+      if (storedComp) JSON.parse(storedComp).forEach((id: string) => seenCompleted.current.add(id));
+      const storedClaim = localStorage.getItem(`colt_seen_claimed_quests_${user.id}`);
+      if (storedClaim) JSON.parse(storedClaim).forEach((id: string) => seenClaimed.current.add(id));
+    } catch {}
+
+    const persistSeen = () => {
+      try {
+        localStorage.setItem(`colt_seen_completed_quests_${user.id}`, JSON.stringify(Array.from(seenCompleted.current)));
+        localStorage.setItem(`colt_seen_claimed_quests_${user.id}`, JSON.stringify(Array.from(seenClaimed.current)));
+      } catch {}
+    };
+
     const notify = async (row: { id: string; quest_id: string; progress: number; completed_at: string | null; claimed_at: string | null }) => {
       const { data: q } = await supabase
         .from("quests")
@@ -30,36 +45,52 @@ export function QuestCompletionToast() {
       const xp = Number(q.xp_reward) || 0;
       const hasCard = Boolean(q.icon_url || q.cosmetic_reward || (q.metadata as any)?.has_card || (q.metadata as any)?.card_image_url);
 
+      const isRecentCompletion = row.completed_at
+        ? Date.now() - new Date(row.completed_at).getTime() < 15000
+        : false;
+
       if (row.completed_at && !row.claimed_at && !seenCompleted.current.has(row.id)) {
         seenCompleted.current.add(row.id);
-        confetti({ particleCount: 80, spread: 70, origin: { x: 0.85, y: 0.2 }, colors: ["#f472b6", "#a78bfa", "#38bdf8", "#facc15"] });
+        persistSeen();
 
-        const rewardItems: string[] = [];
-        if (credits > 0) rewardItems.push(`${credits} 💎`);
-        if (xp > 0) rewardItems.push(`${xp} XP`);
-        if (hasCard) rewardItems.push("🃏 קלף לאלבום");
+        if (isRecentCompletion) {
+          confetti({ particleCount: 80, spread: 70, origin: { x: 0.85, y: 0.2 }, colors: ["#f472b6", "#a78bfa", "#38bdf8", "#facc15"] });
 
-        const rewardSummary = rewardItems.length > 0 ? ` (${rewardItems.join(" + ")})` : "";
+          const rewardItems: string[] = [];
+          if (credits > 0) rewardItems.push(`${credits} 💎`);
+          if (xp > 0) rewardItems.push(`${xp} XP`);
+          if (hasCard) rewardItems.push("🃏 קלף לאלבום");
 
-        toast.success(`🎉 השלמת משימה: ${q.name}!`, {
-          description: `🎁 יש פרס לאיסוף (Reward to claim)! היכנסו למרכז המשימות לאיסוף${rewardSummary}`,
-          duration: 7000,
-        });
+          const rewardSummary = rewardItems.length > 0 ? ` (${rewardItems.join(" + ")})` : "";
+
+          toast.success(`🎉 השלמת משימה: ${q.name}!`, {
+            description: `🎁 יש פרס לאיסוף (Reward to claim)! היכנסו למרכז המשימות לאיסוף${rewardSummary}`,
+            duration: 7000,
+          });
+        }
       }
+
+      const isRecentClaim = row.claimed_at
+        ? Date.now() - new Date(row.claimed_at).getTime() < 15000
+        : false;
 
       if (row.claimed_at && !seenClaimed.current.has(row.id)) {
         seenClaimed.current.add(row.id);
-        confetti({ particleCount: 120, spread: 100, origin: { x: 0.85, y: 0.2 }, colors: ["#fde047", "#f59e0b", "#ec4899"] });
+        persistSeen();
 
-        const claimedItems: string[] = [];
-        if (credits > 0) claimedItems.push(`+${credits} ג'מים 💎`);
-        if (xp > 0) claimedItems.push(`+${xp} XP ⭐`);
-        if (hasCard) claimedItems.push(`🃏 קלף נוסף לאלבום!`);
+        if (isRecentClaim) {
+          confetti({ particleCount: 120, spread: 100, origin: { x: 0.85, y: 0.2 }, colors: ["#fde047", "#f59e0b", "#ec4899"] });
 
-        toast.success(`✨ הפרס נאסף בהצלחה!`, {
-          description: claimedItems.length > 0 ? claimedItems.join(" · ") : `השלמת את ${q.name}`,
-          duration: 5000,
-        });
+          const claimedItems: string[] = [];
+          if (credits > 0) claimedItems.push(`+${credits} ג'מים 💎`);
+          if (xp > 0) claimedItems.push(`+${xp} XP ⭐`);
+          if (hasCard) claimedItems.push(`🃏 קלף נוסף לאלבום!`);
+
+          toast.success(`✨ הפרס נאסף בהצלחה!`, {
+            description: claimedItems.length > 0 ? claimedItems.join(" · ") : `השלמת את ${q.name}`,
+            duration: 5000,
+          });
+        }
         qc.invalidateQueries({ queryKey: ["profile"] });
         qc.invalidateQueries({ queryKey: ["my-quests"] });
       }
@@ -71,6 +102,7 @@ export function QuestCompletionToast() {
         if (r.completed_at) seenCompleted.current.add(r.id);
         if (r.claimed_at) seenClaimed.current.add(r.id);
       }
+      persistSeen();
     });
 
     const ch = supabase

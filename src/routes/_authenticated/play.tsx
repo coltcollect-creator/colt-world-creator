@@ -259,6 +259,8 @@ function PlayPage() {
 
   useEffect(() => {
     if (!user) return;
+    if (sessionStorage.getItem(`colt_login_tracked_${user.id}`)) return;
+    sessionStorage.setItem(`colt_login_tracked_${user.id}`, "1");
     // record login progress
     trackQuestAction("login", 1);
     supabase.rpc("progress_quest", { _action_type: "login", _amount: 1 }).then(() => {});
@@ -970,8 +972,8 @@ function MobileJoystick({
 
   return (
     <div className="pointer-events-none absolute inset-0 md:hidden select-none">
-      {/* 🎮 Left Side: Movement Virtual Joystick */}
-      <div className="pointer-events-auto absolute bottom-3 start-3 flex flex-col items-center gap-1">
+      {/* 🎮 Left Side: Movement Virtual Joystick (Fixed to Physical Screen Left) */}
+      <div className="pointer-events-auto absolute bottom-3 left-3 flex flex-col items-center gap-1">
         <div
           ref={moveRef}
           className="relative grid h-20 w-20 place-items-center rounded-full border-2 border-white/80 bg-black/60 shadow-2xl backdrop-blur-md touch-none"
@@ -1008,9 +1010,9 @@ function MobileJoystick({
         </span>
       </div>
 
-      {/* 🎥 Right Side: Camera Rotation Joystick (2.5D/3D) OR Jump Button (2D) */}
+      {/* 🎥 Right Side: Camera Rotation Joystick (2.5D/3D) OR Jump Button (2D) (Fixed to Physical Screen Right) */}
       {is3DOrCool ? (
-        <div className="pointer-events-auto absolute bottom-3 end-3 flex flex-col items-center gap-1">
+        <div className="pointer-events-auto absolute bottom-3 right-3 flex flex-col items-center gap-1">
           {/* Camera Horizontal Orbit Rotation Joystick */}
           <div
             ref={camRef}
@@ -1050,7 +1052,7 @@ function MobileJoystick({
         </div>
       ) : (
         /* 2D Jump button */
-        <div className="pointer-events-auto absolute bottom-4 end-3 flex flex-col items-center gap-1">
+        <div className="pointer-events-auto absolute bottom-4 right-3 flex flex-col items-center gap-1">
           <button
             className="grid h-14 w-14 place-items-center rounded-full border-2 border-white bg-primary text-xl text-primary-foreground shadow-2xl active:scale-95"
             onTouchStart={() => { touchInputRef.current.jump = true; }}

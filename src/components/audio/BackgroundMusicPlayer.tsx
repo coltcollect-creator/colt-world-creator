@@ -116,16 +116,22 @@ export function BackgroundMusicPlayer() {
       window.removeEventListener("click", startAudioOnGesture);
       window.removeEventListener("keydown", startAudioOnGesture);
       window.removeEventListener("touchstart", startAudioOnGesture);
+      window.removeEventListener("touchend", startAudioOnGesture);
+      window.removeEventListener("pointerdown", startAudioOnGesture);
     };
 
     window.addEventListener("click", startAudioOnGesture, { once: true });
     window.addEventListener("keydown", startAudioOnGesture, { once: true });
     window.addEventListener("touchstart", startAudioOnGesture, { once: true });
+    window.addEventListener("touchend", startAudioOnGesture, { once: true });
+    window.addEventListener("pointerdown", startAudioOnGesture, { once: true });
 
     return () => {
       window.removeEventListener("click", startAudioOnGesture);
       window.removeEventListener("keydown", startAudioOnGesture);
       window.removeEventListener("touchstart", startAudioOnGesture);
+      window.removeEventListener("touchend", startAudioOnGesture);
+      window.removeEventListener("pointerdown", startAudioOnGesture);
     };
   }, [hasInteracted, isMuted, profileMusicEnabled]);
 
@@ -204,7 +210,7 @@ export function BackgroundMusicPlayer() {
   return (
     <div
       dir="rtl"
-      className="fixed bottom-4 left-4 z-40 select-none font-sans transition-all duration-300 print:hidden"
+      className="fixed bottom-24 left-3 sm:bottom-4 sm:left-4 z-40 select-none font-sans transition-all duration-300 print:hidden"
     >
       <audio
         ref={audioRef}

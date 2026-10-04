@@ -99,7 +99,7 @@ export async function trackQuestAction(
 
       const existing = existingList?.[0];
       const prevProg = Number(existing?.progress) || 0;
-      if (existing?.claimed_at) continue; // Already completed & claimed
+      if (existing?.claimed_at || existing?.completed_at) continue; // Already completed & claimed or done
 
       const isDaily = q.quest_type === "daily" || actionKey === "login" || (q.name || "").includes("יומי") || (q.name || "").includes("התחברות");
       const todayStr = new Date().toISOString().slice(0, 10);
@@ -127,7 +127,7 @@ export async function trackQuestAction(
         continue;
       }
 
-      const isCompleted = newProg >= target;
+      const isNewlyCompleted = !existing?.completed_at && newProg >= target;
       const creditReward = Number(q.credit_reward ?? q.gems_reward ?? 0);
       const xpReward = Number(q.xp_reward ?? 0);
 
@@ -136,7 +136,7 @@ export async function trackQuestAction(
         user_id: user.id,
         quest_id: qId,
         progress: newProg,
-        completed_at: isCompleted ? (existing?.completed_at || new Date().toISOString()) : null,
+        completed_at: isNewlyCompleted ? new Date().toISOString() : (existing?.completed_at || null),
         claimed_at: existing?.claimed_at || null,
         period_key: isDaily ? todayStr : (q.quest_type === "daily" ? todayStr : "once"),
         updated_at: new Date().toISOString(),
@@ -148,7 +148,7 @@ export async function trackQuestAction(
         questName: q.name || "משימה",
         currentProgress: newProg,
         targetAmount: target,
-        isCompleted,
+        isCompleted: isNewlyCompleted,
         creditReward,
         xpReward,
         gemsReward: creditReward,
