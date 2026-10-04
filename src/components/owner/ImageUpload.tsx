@@ -12,22 +12,8 @@ type Props = {
 
 const TEN_YEARS = 60 * 60 * 24 * 365 * 10;
 
-async function compressImageFile(file: File, folder = "misc", maxDim = 1200, quality = 0.88): Promise<{ dataUrl: string; blob: Blob; ext: string; mime: string }> {
+async function compressImageFile(file: File, folder = "misc", maxDim = 1200, quality = 0.85): Promise<{ dataUrl: string; blob: Blob; ext: string; mime: string }> {
   return new Promise((resolve, reject) => {
-    const isTransparentFormat =
-      file.type === "image/png" ||
-      file.type === "image/webp" ||
-      file.name.toLowerCase().endsWith(".png") ||
-      file.name.toLowerCase().endsWith(".webp") ||
-      folder === "characters" ||
-      folder === "cosmetics" ||
-      folder === "sprites" ||
-      folder === "stickers" ||
-      folder === "cards";
-
-    const targetMime = isTransparentFormat ? "image/png" : "image/jpeg";
-    const ext = isTransparentFormat ? "png" : "jpg";
-
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new window.Image();
@@ -45,20 +31,37 @@ async function compressImageFile(file: File, folder = "misc", maxDim = 1200, qua
         const ctx = canvas.getContext("2d");
         if (!ctx) {
           const raw = (e.target?.result as string) || "";
-          resolve({ dataUrl: raw, blob: file, ext, mime: targetMime });
+          resolve({ dataUrl: raw, blob: file, ext: "webp", mime: "image/webp" });
           return;
         }
-        // Ensure background is cleared to preserve transparent alpha pixels
+
+        // Clear canvas with transparent pixels so alpha is preserved
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
 
-        const dataUrl = canvas.toDataURL(targetMime, targetMime === "image/png" ? undefined : quality);
+        // Check WebP support (supports full transparency + high compression)
+        let targetMime = "image/webp";
+        let ext = "webp";
+        try {
+          const check = canvas.toDataURL("image/webp");
+          if (!check.startsWith("data:image/webp")) {
+            // Fallback for older browsers
+            const isTransparent = file.type === "image/png" || folder === "characters" || folder === "cosmetics" || folder === "sprites";
+            targetMime = isTransparent ? "image/png" : "image/jpeg";
+            ext = isTransparent ? "png" : "jpg";
+          }
+        } catch {
+          targetMime = "image/png";
+          ext = "png";
+        }
+
+        const dataUrl = canvas.toDataURL(targetMime, quality);
         canvas.toBlob(
           (blob) => {
             resolve({ dataUrl, blob: blob || file, ext, mime: targetMime });
           },
           targetMime,
-          targetMime === "image/png" ? undefined : quality
+          quality
         );
       };
       img.onerror = () => reject(new Error("שגיאה בטעינת קובץ תמונה"));

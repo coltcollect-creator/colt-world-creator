@@ -191,7 +191,7 @@ function AuctionRoom({ auction, onClose }: { auction: Auction; onClose: () => vo
 
         <div className="p-5">
           {a.image_url && (
-            <img src={a.image_url} alt={a.name} className="mx-auto mb-4 max-h-56 rounded-2xl object-contain shadow-lg" />
+            <img src={a.image_url} alt={a.name} loading="lazy" decoding="async" className="mx-auto mb-4 max-h-56 rounded-2xl object-contain shadow-lg" />
           )}
 
           {products.length > 0 && (
@@ -200,7 +200,7 @@ function AuctionRoom({ auction, onClose }: { auction: Auction; onClose: () => vo
               <div className="flex flex-wrap gap-2">
                 {products.map((p) => (
                   <div key={p.id} className="chrome-panel flex items-center gap-2 p-2 text-xs">
-                    {p.image_url ? <img src={p.image_url} alt="" className="h-10 w-10 rounded object-contain" /> : <span className="text-xl">📦</span>}
+                    {p.image_url ? <img src={p.image_url} alt="" loading="lazy" decoding="async" className="h-10 w-10 rounded object-contain" /> : <span className="text-xl">📦</span>}
                     <div>
                       <div className="font-bold">{p.name}</div>
                       {p.sku && <div className="text-[10px] text-muted-foreground">מק"ט: {p.sku}</div>}

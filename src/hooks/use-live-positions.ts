@@ -16,41 +16,73 @@ type Entry = {
 
 export type LiveSample = { x: number; y: number; facing: LiveFacing; moving: boolean };
 
-/** How often we broadcast our own position (ms). */
-const SEND_MS = 60;
+/** How often we broadcast our own position when moving (ms). ~10 updates/sec is silky smooth with lerp */
+const SEND_MS = 90;
 /** Smoothing rate for remote players (higher = snappier). */
 const SMOOTH_K = 14;
 
 /**
  * Realtime position sync over a Supabase broadcast channel.
- * Broadcasts are cheap (no DB writes), so we can push ~16 updates/sec and
- * interpolate between them for smooth movement of other players.
+ * Uses client-side interpolation (lerp) so remote players move at 60 FPS
+ * while network broadcast is only sent when the player is actually moving.
  */
 export function useLivePositions(mapId: string | null | undefined, enabled: boolean, selfId?: string) {
   const entries = useRef<Map<string, Entry>>(new Map());
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const lastSent = useRef(0);
-  const lastPayload = useRef<string>("");
+  const lastX = useRef<number | null>(null);
+  const lastY = useRef<number | null>(null);
+  const lastFacing = useRef<LiveFacing | null>(null);
+  const lastMoving = useRef<boolean | null>(null);
+  const stationarySent = useRef(false);
 
   useEffect(() => {
     entries.current.clear();
+    lastX.current = null;
+    lastY.current = null;
+    lastFacing.current = null;
+    lastMoving.current = null;
+    stationarySent.current = false;
+
     if (!enabled || !mapId) {
       channelRef.current = null;
       return;
     }
     const channel = supabase.channel(`pos-${mapId}`, { config: { broadcast: { self: false } } });
     channel.on("broadcast", { event: "pos" }, ({ payload }) => {
-      const p = payload as { id?: string; x?: number; y?: number; f?: LiveFacing; m?: boolean };
-      if (!p?.id || p.id === selfId || typeof p.x !== "number" || typeof p.y !== "number") return;
+      let id: string | undefined;
+      let px: number | undefined;
+      let py: number | undefined;
+      let pf: LiveFacing = "right";
+      let pm = false;
+
+      // Handle compressed packed array [id, x, y, facing(0|1), moving(0|1)]
+      if (Array.isArray(payload)) {
+        id = payload[0];
+        px = payload[1];
+        py = payload[2];
+        pf = payload[3] === 0 ? "left" : "right";
+        pm = Boolean(payload[4]);
+      } else if (payload && typeof payload === "object") {
+        const p = payload as { id?: string; x?: number; y?: number; f?: LiveFacing; m?: boolean };
+        id = p.id;
+        px = p.x;
+        py = p.y;
+        pf = p.f ?? "right";
+        pm = Boolean(p.m);
+      }
+
+      if (!id || id === selfId || typeof px !== "number" || typeof py !== "number") return;
+
       const now = performance.now();
-      const prev = entries.current.get(p.id);
-      entries.current.set(p.id, {
-        x: prev?.x ?? p.x,
-        y: prev?.y ?? p.y,
-        tx: p.x,
-        ty: p.y,
-        facing: p.f ?? prev?.facing ?? "right",
-        moving: !!p.m,
+      const prev = entries.current.get(id);
+      entries.current.set(id, {
+        x: prev?.x ?? px,
+        y: prev?.y ?? py,
+        tx: px,
+        ty: py,
+        facing: pf,
+        moving: pm,
         lastMsg: now,
         lastSample: prev?.lastSample ?? now,
       });
@@ -64,19 +96,55 @@ export function useLivePositions(mapId: string | null | undefined, enabled: bool
   }, [mapId, enabled, selfId]);
 
   const send = useCallback(
-    (x: number, y: number, facing: LiveFacing = "right", moving = false) => {
+    (x: number, y: number, facing: LiveFacing = "right", moving = false, isIdle = false) => {
       const ch = channelRef.current;
       if (!ch || !selfId) return;
+
+      // If document is hidden (background tab) or player is idle (AFK >= 3 min), zero network traffic
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (isIdle) return;
+
+      const rx = Math.round(x);
+      const ry = Math.round(y);
       const now = performance.now();
-      const payload = `${Math.round(x)}|${Math.round(y)}|${facing}|${moving ? 1 : 0}`;
+
+      const hasMoved =
+        lastX.current === null ||
+        Math.abs(rx - lastX.current) >= 2 ||
+        Math.abs(ry - lastY.current) >= 2 ||
+        facing !== lastFacing.current ||
+        moving !== lastMoving.current;
+
+      // If player is not moving and position didn't change:
+      if (!hasMoved && !moving) {
+        // If we already sent the stopped frame, don't send anything more!
+        if (stationarySent.current) {
+          return;
+        }
+      }
+
+      if (hasMoved) {
+        stationarySent.current = false;
+      }
+
+      // Throttle when moving to ~10 updates/sec
       if (now - lastSent.current < SEND_MS) return;
-      if (payload === lastPayload.current && now - lastSent.current < 1000) return;
+
       lastSent.current = now;
-      lastPayload.current = payload;
+      lastX.current = rx;
+      lastY.current = ry;
+      lastFacing.current = facing;
+      lastMoving.current = moving;
+
+      if (!moving) {
+        stationarySent.current = true;
+      }
+
+      // Send compressed packed array [id, x, y, facing, moving]
       ch.send({
         type: "broadcast",
         event: "pos",
-        payload: { id: selfId, x: Math.round(x), y: Math.round(y), f: facing, m: moving },
+        payload: [selfId, rx, ry, facing === "left" ? 0 : 1, moving ? 1 : 0],
       });
     },
     [selfId],
@@ -87,8 +155,8 @@ export function useLivePositions(mapId: string | null | undefined, enabled: bool
     const e = entries.current.get(id);
     if (!e) return undefined;
     const now = performance.now();
-    // Keep entries for 3 minutes so standing players do not disappear from view
-    if (now - e.lastMsg > 180000) {
+    // Keep entries for 10 minutes so stationary players in the room remain visible
+    if (now - e.lastMsg > 600000) {
       entries.current.delete(id);
       return undefined;
     }
@@ -97,6 +165,11 @@ export function useLivePositions(mapId: string | null | undefined, enabled: bool
     const a = 1 - Math.exp(-SMOOTH_K * dt);
     e.x += (e.tx - e.x) * a;
     e.y += (e.ty - e.y) * a;
+
+    // Snap micro-jitter when very close to target for razor-sharp rendering
+    if (Math.abs(e.tx - e.x) < 0.25) e.x = e.tx;
+    if (Math.abs(e.ty - e.y) < 0.25) e.y = e.ty;
+
     const moving = e.moving && now - e.lastMsg < 1200;
     return { x: e.x, y: e.y, facing: e.facing, moving };
   }, []);

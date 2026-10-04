@@ -175,12 +175,12 @@ function LiveRipRoom({ rip, onClose }: { rip: Rip; onClose: () => void }) {
         </div>
 
         <div className="p-5">
-          {r.image_url && <img src={r.image_url} alt={r.name} className="mx-auto mb-4 max-h-56 rounded-2xl object-contain shadow-lg" />}
+          {r.image_url && <img src={r.image_url} alt={r.name} loading="lazy" decoding="async" className="mx-auto mb-4 max-h-56 rounded-2xl object-contain shadow-lg" />}
 
           {product && (
             <div className="chrome-panel mb-4 flex items-center gap-2 p-2 text-xs">
               {product.image_url ? (
-                <img src={product.image_url} alt="" className="h-10 w-10 rounded object-contain" />
+                <img src={product.image_url} alt="" loading="lazy" decoding="async" className="h-10 w-10 rounded object-contain" />
               ) : (
                 <span className="text-xl">📦</span>
               )}

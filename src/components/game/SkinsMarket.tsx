@@ -145,7 +145,7 @@ export function SkinsMarket() {
         <div className="fixed inset-0 z-[60] grid place-items-center bg-black/60 p-4" onClick={() => setConfirmBuy(false)}>
           <div dir="rtl" className="chrome-panel w-full max-w-sm p-5 text-center" onClick={(e) => e.stopPropagation()}>
             {(selected.thumbnail_url ?? selected.sprite_right_url) && (
-              <img src={(selected.thumbnail_url ?? selected.sprite_right_url) as string} alt="" className="mx-auto mb-3 h-24 w-24 rounded-xl bg-muted object-contain p-1" />
+              <img src={(selected.thumbnail_url ?? selected.sprite_right_url) as string} alt="" loading="lazy" decoding="async" className="mx-auto mb-3 h-24 w-24 rounded-xl bg-muted object-contain p-1" />
             )}
             <h3 className="text-lg font-black">לאשר רכישה?</h3>
             <p className="mt-1 text-sm font-bold">{selected.name}</p>

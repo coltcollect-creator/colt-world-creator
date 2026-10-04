@@ -40,6 +40,22 @@ type Nearby =
   | { kind: "screen"; id: string; name: string; text?: string; imageUrl?: string | null }
   | null;
 
+function getStoredMapBundle(mapIdKey: string) {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = localStorage.getItem(`colt_map_bundle_${mapIdKey}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return undefined;
+}
+
+function saveStoredMapBundle(mapIdKey: string, bundle: any) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(`colt_map_bundle_${mapIdKey}`, JSON.stringify(bundle));
+  } catch {}
+}
+
 function PlayPage() {
   const { user } = useAuth();
   const { t } = useI18n();
@@ -64,9 +80,26 @@ function PlayPage() {
     return null;
   });
 
+  const cacheKey = activeMapId || "main-lobby";
+
+  // Listen for map updates (e.g. from editor) to purge local cache
+  useEffect(() => {
+    const onMapUpdated = () => {
+      try {
+        localStorage.removeItem(`colt_map_bundle_${cacheKey}`);
+      } catch {}
+    };
+    window.addEventListener("colt-map-updated", onMapUpdated);
+    return () => window.removeEventListener("colt-map-updated", onMapUpdated);
+  }, [cacheKey]);
+
   const { data: mapBundle } = useQuery({
     queryKey: ["active-map", activeMapId],
+    initialData: () => getStoredMapBundle(cacheKey),
+    staleTime: 60 * 1000,
     queryFn: async () => {
+      const cached = getStoredMapBundle(cacheKey);
+
       const fallbackMap = {
         id: "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9",
         slug: "main-lobby",
@@ -126,6 +159,12 @@ function PlayPage() {
           .maybeSingle();
 
         const verId = version?.id || "34e2d77d-a542-4f2b-9425-cfe269c18636";
+
+        // Fast path: if cached map exists and the version ID hasn't changed, reuse cached objects!
+        if (cached && cached.map?.id === currentMap.id && cached.version?.id === verId && cached.objects?.length > 0) {
+          return cached;
+        }
+
         const { data: objs } = await supabase.from("map_objects").select("*").eq("map_version_id", verId);
         
         const isMainLobby = currentMap.id === "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9" || currentMap.slug === "main-lobby";
@@ -147,7 +186,9 @@ function PlayPage() {
             ];
 
         const finalObjs = objs && objs.length > 0 ? objs : fallbackObjects;
-        return { map: currentMap, objects: finalObjs as unknown as MapObject[], version: version || { id: verId } };
+        const result = { map: currentMap, objects: finalObjs as unknown as MapObject[], version: version || { id: verId } };
+        saveStoredMapBundle(cacheKey, result);
+        return result;
       } catch (err) {
         console.error("Failed to load map bundle:", err);
         return {
@@ -516,6 +557,8 @@ function PlayPage() {
                   <img
                     src={screenModalData.imageUrl}
                     alt={screenModalData.title}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full max-h-[380px] object-contain rounded-2xl mx-auto"
                   />
                 </div>
@@ -567,14 +610,20 @@ function StoreModal({ storeId, onClose, onChat }: { storeId: string; onClose: ()
   }, [storeId]);
   const { data: store } = useQuery({
     queryKey: ["store", storeId],
+    enabled: !!storeId,
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => (await supabase.from("stores").select("*").eq("id", storeId).maybeSingle()).data,
   });
   const { data: products = [], isPending: productsPending } = useQuery({
     queryKey: ["store-products", storeId],
+    enabled: !!storeId,
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => (await supabase.from("products").select("*").or(`store_id.eq.${storeId},store_ids.cs.{${storeId}}`).eq("active", true).order("credit_price")).data ?? [],
   });
   const { data: cosmetics = [], isPending: cosmeticsPending } = useQuery({
     queryKey: ["store-cosmetics", storeId],
+    enabled: !!storeId,
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => (await supabase.from("cosmetics").select("*").eq("store_id", storeId).eq("active", true).order("credit_price")).data ?? [],
   });
   const storeLoading = productsPending || cosmeticsPending;
@@ -690,7 +739,7 @@ function StoreModal({ storeId, onClose, onChat }: { storeId: string; onClose: ()
       {confirm && (
         <div className="fixed inset-0 z-[60] grid place-items-center bg-black/60 p-4" onClick={() => setConfirm(null)}>
           <div dir="rtl" className="chrome-panel w-full max-w-sm p-5 text-center" onClick={(e) => e.stopPropagation()}>
-            {confirm.image && <img src={confirm.image} alt={confirm.name} className="mx-auto mb-3 h-24 w-24 rounded-xl bg-muted object-contain p-1" />}
+            {confirm.image && <img src={confirm.image} alt={confirm.name} loading="lazy" decoding="async" className="mx-auto mb-3 h-24 w-24 rounded-xl bg-muted object-contain p-1" />}
             <h3 className="text-lg font-black">לאשר רכישה?</h3>
             <p className="mt-1 text-sm font-bold">{confirm.name}</p>
             <p className="mt-2 text-xs text-muted-foreground">

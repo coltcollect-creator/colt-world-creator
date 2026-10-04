@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 type ActivePlayer = {
@@ -44,10 +44,16 @@ export function ActivePlayers() {
   const [baseCount] = useState(() => Math.floor(Math.random() * 15) + 84); // 84-98 players
   const [fluctuation, setFluctuation] = useState(0);
 
-  // Poll real active players from active_players table
+  // Cache profiles in memory to avoid hammering the database for levels & usernames
+  const profileCache = useRef<Map<string, { username: string; level: number }>>(new Map());
+
+  // Poll real active players from active_players table at a gentle interval (45s instead of 4s)
   useEffect(() => {
     let cancelled = false;
     const loadReal = async () => {
+      // Don't poll if browser tab is hidden in background
+      if (typeof document !== "undefined" && document.hidden) return;
+
       try {
         const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
         const { data } = await supabase
@@ -65,23 +71,40 @@ export function ActivePlayers() {
           }
         }
         const uniqueList = Array.from(uniqueMap.values());
-        const ids = uniqueList.map((d) => d.user_id);
-        const { data: ps } = ids.length
-          ? await supabase.from("profiles").select("id, username, level").in("id", ids)
-          : { data: [] };
+        const missingIds = uniqueList
+          .map((d) => d.user_id as string)
+          .filter((id) => !profileCache.current.has(id));
+
+        if (missingIds.length > 0) {
+          const { data: ps } = await supabase
+            .from("profiles")
+            .select("id, username, level")
+            .in("id", missingIds);
+
+          if (ps) {
+            for (const p of ps) {
+              profileCache.current.set(p.id, {
+                username: p.username || `שחקן-${String(p.id).slice(0, 4)}`,
+                level: p.level ?? 1,
+              });
+            }
+          }
+        }
 
         if (cancelled) return;
 
-        const map = new Map((ps ?? []).map((p) => [p.id, p]));
-        const formatted: ActivePlayer[] = uniqueList.map((d) => ({
-          user_id: d.user_id,
-          x: d.x,
-          y: d.y,
-          last_seen: d.last_seen,
-          username: map.get(d.user_id)?.username || `שחקן-${String(d.user_id).slice(0, 4)}`,
-          level: map.get(d.user_id)?.level ?? 1,
-          isReal: true,
-        }));
+        const formatted: ActivePlayer[] = uniqueList.map((d) => {
+          const cached = profileCache.current.get(d.user_id);
+          return {
+            user_id: d.user_id,
+            x: d.x,
+            y: d.y,
+            last_seen: d.last_seen,
+            username: cached?.username || `שחקן-${String(d.user_id).slice(0, 4)}`,
+            level: cached?.level ?? 1,
+            isReal: true,
+          };
+        });
 
         setRealPlayers(formatted);
       } catch (err) {
@@ -90,10 +113,19 @@ export function ActivePlayers() {
     };
 
     loadReal();
-    const interval = setInterval(loadReal, 4000);
+    const interval = setInterval(loadReal, 45000);
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        loadReal();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       cancelled = true;
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 

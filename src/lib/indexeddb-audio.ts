@@ -54,44 +54,82 @@ export async function saveAudioBlob(trackId: string, blob: Blob | File): Promise
   });
 }
 
+const AUDIO_CACHE_NAME = "colt_audio_cache_v1";
+
 /**
- * Resolves a track URL. If it's an idb:// URI, fetches the Blob from IndexedDB
- * and returns a playable Object URL. Otherwise returns the original URL string.
+ * Resolves a track URL.
+ * 1. If it's an idb:// URI, fetches the Blob from IndexedDB and returns a playable Object URL.
+ * 2. If it's a remote/external audio URL (http/https or relative path):
+ *    - Checks in-memory objectUrlCache first (instant).
+ *    - Checks the browser's CacheStorage (`caches.open(AUDIO_CACHE_NAME)`).
+ *    - If already cached locally, creates an Object URL from the cached Blob and returns it immediately (0 network requests!).
+ *    - If not yet cached, fetches the audio file once, caches it in CacheStorage for future loops/sessions,
+ *      and returns the local object URL.
+ * Next time the track plays or loops: 0 server bytes consumed!
  */
 export async function resolveAudioUrl(url: string): Promise<string> {
   if (!url) return "";
-  if (!url.startsWith("idb://")) {
-    return url;
-  }
 
-  // Check cache first
+  // Check in-memory object URL cache first
   if (objectUrlCache.has(url)) {
     return objectUrlCache.get(url)!;
   }
 
-  try {
-    const db = await getDB();
-    const key = url.replace("idb://", "");
-    return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, "readonly");
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get(key);
+  // Case 1: IDB internal URI
+  if (url.startsWith("idb://")) {
+    try {
+      const db = await getDB();
+      const key = url.replace("idb://", "");
+      return new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, "readonly");
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(key);
 
-      req.onsuccess = () => {
-        const blob = req.result as Blob | undefined;
-        if (blob) {
-          const objUrl = URL.createObjectURL(blob);
-          objectUrlCache.set(url, objUrl);
-          resolve(objUrl);
-        } else {
-          resolve("");
-        }
-      };
-      req.onerror = () => resolve("");
-    });
-  } catch {
-    return "";
+        req.onsuccess = () => {
+          const blob = req.result as Blob | undefined;
+          if (blob) {
+            const objUrl = URL.createObjectURL(blob);
+            objectUrlCache.set(url, objUrl);
+            resolve(objUrl);
+          } else {
+            resolve("");
+          }
+        };
+        req.onerror = () => resolve("");
+      });
+    } catch {
+      return "";
+    }
   }
+
+  // Case 2: Remote / Static URL (https://..., http://..., /storage_cache/...)
+  if (typeof window !== "undefined" && "caches" in window) {
+    try {
+      const cache = await caches.open(AUDIO_CACHE_NAME);
+      const match = await cache.match(url);
+      if (match) {
+        const blob = await match.blob();
+        const objUrl = URL.createObjectURL(blob);
+        objectUrlCache.set(url, objUrl);
+        return objUrl;
+      }
+
+      // Not in cache yet: fetch once, cache clone, and return ObjectURL
+      const res = await fetch(url, { mode: "cors" });
+      if (res.ok) {
+        await cache.put(url, res.clone());
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+        objectUrlCache.set(url, objUrl);
+        return objUrl;
+      }
+    } catch (e) {
+      // Fallback to original URL if offline or CORS restricted
+      return url;
+    }
+  }
+
+  return url;
 }
 
 /**

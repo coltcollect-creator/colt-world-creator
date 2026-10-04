@@ -406,7 +406,7 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
                   >
                     <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-border bg-white shadow-sm">
                       {p.image_url ? (
-                        <img src={p.image_url} alt={p.name} className="h-full w-full object-contain" />
+                        <img src={p.image_url} alt={p.name} loading="lazy" decoding="async" className="h-full w-full object-contain" />
                       ) : (
                         <div className="grid h-full w-full place-items-center text-xs text-muted-foreground">—</div>
                       )}
@@ -504,7 +504,7 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-border bg-white">
                         {prod?.image_url ? (
-                          <img src={prod.image_url} alt="" className="h-full w-full object-contain" />
+                          <img src={prod.image_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain" />
                         ) : (
                           <div className="grid h-full w-full place-items-center text-xs text-muted-foreground">🃏</div>
                         )}

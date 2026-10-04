@@ -10,14 +10,27 @@ export function GlobalChat() {
   const { user, profile } = useAuth();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [text, setText] = useState("");
-  const [lastSent, setLastSent] = useState(0);
+  const lastSent = useRef(0);
+  const lastDayRef = useRef(new Date().toDateString());
 
   useEffect(() => {
     let cancelled = false;
+
+    const getTodayMidnightIso = () => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      return d.toISOString();
+    };
+
     (async () => {
+      const cutoff = getTodayMidnightIso();
       const { data } = await supabase.from("chat_messages")
-        .select("id,user_id,message,created_at").eq("channel", "global").eq("deleted", false)
-        .order("created_at", { ascending: false }).limit(40);
+        .select("id,user_id,message,created_at")
+        .eq("channel", "global")
+        .eq("deleted", false)
+        .gte("created_at", cutoff)
+        .order("created_at", { ascending: false })
+        .limit(50);
       if (cancelled || !data) return;
       const list = (data as Msg[]).reverse();
       // enrich with usernames
@@ -34,7 +47,23 @@ export function GlobalChat() {
         return true;
       });
       setMessages(uniqueList);
+
+      // Clean up old messages older than today in background so table stays lean
+      supabase.from("chat_messages").delete().lt("created_at", cutoff).then(() => {});
     })();
+
+    // Gentle periodic check every 2 hours for daily chat reset
+    const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+    const midnightInterval = setInterval(() => {
+      const now = new Date();
+      const currentDay = now.toDateString();
+      if (lastDayRef.current !== currentDay) {
+        lastDayRef.current = currentDay;
+        setMessages([]);
+        const newCutoff = getTodayMidnightIso();
+        supabase.from("chat_messages").delete().lt("created_at", newCutoff).then(() => {});
+      }
+    }, TWO_HOURS_MS);
     const channel = supabase.channel("global-chat")
       .on(
         "postgres_changes",
@@ -95,6 +124,7 @@ export function GlobalChat() {
 
     return () => {
       cancelled = true;
+      clearInterval(midnightInterval);
       supabase.removeChannel(channel);
       if (typeof window !== "undefined") {
         window.removeEventListener("colt_table_change", handleCustomTableChange);
@@ -106,8 +136,8 @@ export function GlobalChat() {
     e.preventDefault();
     if (!user || !text.trim()) return;
     if (text.length > 300) { toast.error("Message too long (max 300)"); return; }
-    if (Date.now() - lastSent < 1000) { toast.error("Slow down!"); return; }
-    setLastSent(Date.now());
+    if (Date.now() - lastSent.current < 1000) { toast.error("Slow down!"); return; }
+    lastSent.current = Date.now();
     const msgText = text.trim();
     setText("");
 

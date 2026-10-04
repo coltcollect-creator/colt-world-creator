@@ -215,6 +215,7 @@ export function DigitalAlbum({
                       alt={card.title}
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                       loading="lazy"
+                      decoding="async"
                     />
                     {/* Gloss foil shimmer overlay */}
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-white/0 via-white/20 to-white/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
@@ -286,6 +287,8 @@ export function DigitalAlbum({
                   <img
                     src={inspectCard.card.image_url}
                     alt={inspectCard.card.title}
+                    loading="lazy"
+                    decoding="async"
                     className="h-full w-full object-cover"
                   />
                 ) : (

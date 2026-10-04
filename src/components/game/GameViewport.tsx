@@ -155,6 +155,10 @@ if (typeof window !== "undefined") {
   });
 }
 
+// In-memory cache for character sprites and cosmetic definitions to prevent redundant DB reads
+const globalCharCache = new Map<string, any>();
+const globalCosCache = new Map<string, any>();
+
 export function GameViewport({
   width,
   height,
@@ -200,6 +204,7 @@ export function GameViewport({
   const nearbyRef = useRef<string | null>(null);
   const bubblesRef = useRef<Map<string, { text: string; until: number }>>(new Map());
   const mapLoadedRef = useRef<string | null>(null);
+  const lastActivityRef = useRef(Date.now());
   const stateRef = useRef({
     x: 100, y: 100, vx: 0, vy: 0, onGround: false, facing: 1 as 1 | -1,
     keys: {} as Record<string, boolean>,
@@ -207,6 +212,8 @@ export function GameViewport({
     camX: 0, camY: 0,
     npcPositions: new Map<string, { x: number; y: number; dir: number; base: number }>(),
     lastSave: 0,
+    lastSavedX: 100,
+    lastSavedY: 100,
   });
 
   useEffect(() => {
@@ -227,6 +234,8 @@ export function GameViewport({
       const spawn = objects.find((o) => o.object_type === "spawn");
       s.x = spawn?.x ?? 100;
       s.y = spawn?.y ?? 100;
+      s.lastSavedX = s.x;
+      s.lastSavedY = s.y;
       s.vx = 0;
       s.vy = 0;
       s.camX = 0;
@@ -241,16 +250,37 @@ export function GameViewport({
       if (profile && hasSavedPositionForThisMap) {
         s.x = profile.last_x || s.x;
         s.y = profile.last_y || s.y;
+        s.lastSavedX = s.x;
+        s.lastSavedY = s.y;
       }
     }
   }, [objects, mapId, onNearby]);
 
   useEffect(() => {
-    const kd = (e: KeyboardEvent) => { stateRef.current.keys[e.key.toLowerCase()] = true; };
-    const ku = (e: KeyboardEvent) => { stateRef.current.keys[e.key.toLowerCase()] = false; };
+    const recordAct = () => {
+      lastActivityRef.current = Date.now();
+    };
+    const kd = (e: KeyboardEvent) => {
+      recordAct();
+      stateRef.current.keys[e.key.toLowerCase()] = true;
+    };
+    const ku = (e: KeyboardEvent) => {
+      recordAct();
+      stateRef.current.keys[e.key.toLowerCase()] = false;
+    };
+    const onPointer = () => recordAct();
+
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup", ku);
-    return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
+    window.addEventListener("pointerdown", onPointer, { passive: true });
+    window.addEventListener("touchstart", onPointer, { passive: true });
+
+    return () => {
+      window.removeEventListener("keydown", kd);
+      window.removeEventListener("keyup", ku);
+      window.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("touchstart", onPointer);
+    };
   }, []);
 
   useEffect(() => {
@@ -327,7 +357,17 @@ export function GameViewport({
       ctx.restore();
     };
 
+    let hiddenTimeout: any = null;
+
     const step = () => {
+      // If user is on another browser tab, throttle completely to save CPU/battery/network
+      if (typeof document !== "undefined" && document.hidden) {
+        hiddenTimeout = setTimeout(() => {
+          raf = requestAnimationFrame(step);
+        }, 1000);
+        return;
+      }
+
       const s = stateRef.current;
       const tin = touchInputRef?.current;
       const isShift = !!(s.keys["shift"] || s.keys["shiftleft"] || s.keys["shiftright"]);
@@ -433,15 +473,23 @@ export function GameViewport({
       s.camY = Math.max(0, Math.min(height - viewportHeight, s.y - viewportHeight / 2));
 
       const t = performance.now();
-      // High-frequency realtime broadcast (~16/sec) so others see smooth motion
-      liveRef.current.send(s.x, s.y, s.facing === -1 ? "left" : "right", s.vx !== 0 || !s.onGround);
+      const isIdle = Date.now() - lastActivityRef.current > 180000; // 3 minutes of no user input
+
+      // Realtime broadcast - sends when moving, automatically silenced when stationary or idle
+      liveRef.current.send(s.x, s.y, s.facing === -1 ? "left" : "right", s.vx !== 0 || !s.onGround, isIdle);
       
-      // Realtime multiplayer sync to memory store + throttled Firestore sync (every 15s to save quota)
-      if (user && mapId) {
+      // Multiplayer Firestore sync - ONLY updates if user actually moved > 15px (or on initial load).
+      // If standing still: 0 writes to Firestore!
+      if (user && mapId && !isIdle && (typeof document === "undefined" || !document.hidden)) {
         const isMoving = s.vx !== 0 || !s.onGround;
-        const interval = 15000;
-        if (s.lastSave === 0 || t - s.lastSave > interval) {
+        const distMoved = Math.hypot(s.x - s.lastSavedX, s.y - s.lastSavedY);
+        const isFirstSave = s.lastSave === 0;
+        const minSaveInterval = 20000; // max once per 20 seconds while walking
+
+        if (isFirstSave || (distMoved >= 15 && t - s.lastSave > minSaveInterval)) {
           s.lastSave = t;
+          s.lastSavedX = s.x;
+          s.lastSavedY = s.y;
           const currentUsername = profile?.display_name || profile?.username || user?.user_metadata?.username || "Player";
           const posData = {
             id: user.id,
@@ -618,6 +666,7 @@ export function GameViewport({
       }
       // Stores with rotation support (45° angles etc.)
       for (const st of storesOnMap) {
+        if (st.x < s.camX - 250 || st.x > s.camX + viewportWidth + 250) continue; // Cull offscreen store
         const sref = stores.find((x) => x.id === st.reference_id);
         const img = getImg(sref?.image_url || (st.metadata?.sprite_url as string | undefined));
         const rot = (st.metadata?.rotation_y as number) ?? (st.metadata?.rotation_deg ? (st.metadata?.rotation_deg as number) * (Math.PI / 180) : 0);
@@ -657,8 +706,9 @@ export function GameViewport({
       }
       // NPCs (sprite-aware)
       for (const n of npcsOnMap) {
-        const nref = npcs.find((x) => x.id === n.reference_id);
         const np = s.npcPositions.get(n.id) ?? { x: n.x, y: n.y, dir: 1, base: n.x };
+        if (np.x < s.camX - 200 || np.x > s.camX + viewportWidth + 200) continue; // Cull offscreen NPC
+        const nref = npcs.find((x) => x.id === n.reference_id);
         const direction: "left" | "right" = np.dir < 0 ? "left" : "right";
         const url = pickSprite(nref, direction, false) || (n.metadata?.sprite_url as string | undefined);
         const img = getImg(url);
@@ -685,6 +735,17 @@ export function GameViewport({
         const lp = liveRef.current.sample(op.user_id);
         const ox = lp?.x ?? op.x;
         const oy = lp?.y ?? op.y;
+
+        // Viewport Culling: only draw players within camera viewport + 200px margin
+        if (
+          ox < s.camX - 200 ||
+          ox > s.camX + viewportWidth + 200 ||
+          oy < s.camY - 200 ||
+          oy > s.camY + viewportHeight + 200
+        ) {
+          continue; // Off-screen! Skip drawing
+        }
+
         const oFacing = lp?.facing ?? "right";
         const sprite = oFacing === "left"
           ? (look?.left ?? look?.idle ?? look?.right ?? null)
@@ -724,7 +785,20 @@ export function GameViewport({
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        if (hiddenTimeout) clearTimeout(hiddenTimeout);
+        raf = requestAnimationFrame(step);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      if (hiddenTimeout) clearTimeout(hiddenTimeout);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [width, height, viewportWidth, viewportHeight, objects, stores, npcs, user, mapId, onInteract, onNearby, profile?.username, equipped, characterSprites, backgroundColor, touchInputRef]);
 
   // Load selected base character sprites from profile.character_id
@@ -805,8 +879,8 @@ export function GameViewport({
       unsubSnapshot = onSnapshot(q, (snapshot) => {
         if (cancelled) return;
         const now = Date.now();
-        // 3-minute cutoff to tolerate clock skew and stationary players
-        const cutoff = now - 180 * 1000;
+        // 10-minute cutoff to keep stationary/idle players visible in the room without continuous DB writes
+        const cutoff = now - 600 * 1000;
         const remotePlayers: OtherPlayer[] = [];
 
         snapshot.forEach((docSnap) => {
@@ -871,26 +945,43 @@ export function GameViewport({
     (async () => {
       const charIds = Array.from(new Set(others.map((o) => o.character_id).filter(Boolean))) as string[];
       const cosIds = Array.from(new Set(others.flatMap((o) => Object.values(o.avatar_config ?? {}).filter(Boolean))));
-      const [chars, cos] = await Promise.all([
-        charIds.length
-          ? supabase.from("characters").select("id, image_url, sprite_right_url, sprite_left_url").in("id", charIds)
-          : Promise.resolve({ data: [] as unknown[] }),
-        cosIds.length
-          ? supabase.from("cosmetics").select("id, layer_type, layer_order, sprite_left_url, sprite_right_url, offset_x, offset_y, scale").in("id", cosIds)
-          : Promise.resolve({ data: [] as unknown[] }),
-      ]);
+
+      const missingCharIds = charIds.filter((id) => !globalCharCache.has(id));
+      const missingCosIds = cosIds.filter((id) => !globalCosCache.has(id));
+
+      if (missingCharIds.length > 0 || missingCosIds.length > 0) {
+        const [chars, cos] = await Promise.all([
+          missingCharIds.length
+            ? supabase.from("characters").select("id, image_url, sprite_right_url, sprite_left_url").in("id", missingCharIds)
+            : Promise.resolve({ data: [] as unknown[] }),
+          missingCosIds.length
+            ? supabase.from("cosmetics").select("id, layer_type, layer_order, sprite_left_url, sprite_right_url, offset_x, offset_y, scale").in("id", missingCosIds)
+            : Promise.resolve({ data: [] as unknown[] }),
+        ]);
+
+        if (chars.data) {
+          for (const c of chars.data as any[]) {
+            globalCharCache.set(c.id, c);
+          }
+        }
+        if (cos.data) {
+          for (const c of cos.data as any[]) {
+            globalCosCache.set(c.id, c);
+          }
+        }
+      }
+
       if (cancelled) return;
-      const charMap = new Map((((chars.data ?? []) as Array<{ id: string; image_url: string | null; sprite_right_url: string | null; sprite_left_url: string | null }>)).map((c) => [c.id, c]));
-      const cosMap = new Map((((cos.data ?? []) as Array<{ id: string; layer_type: string; layer_order: number | null; sprite_left_url: string | null; sprite_right_url: string | null; offset_x: number | null; offset_y: number | null; scale: number | null }>)).map((c) => [c.id, c]));
+
       const next: Record<string, Look> = {};
       for (const o of others) {
-        const ch = o.character_id ? charMap.get(o.character_id) : undefined;
+        const ch = o.character_id ? globalCharCache.get(o.character_id) : undefined;
         next[o.user_id] = {
           idle: ch?.image_url ?? ch?.sprite_right_url ?? null,
           right: ch?.sprite_right_url ?? null,
           left: ch?.sprite_left_url ?? null,
           cosmetics: Object.values(o.avatar_config ?? {})
-            .map((id) => cosMap.get(id))
+            .map((id) => globalCosCache.get(id))
             .filter(Boolean)
             .map((c) => ({
               id: c!.id, layer_type: c!.layer_type,
