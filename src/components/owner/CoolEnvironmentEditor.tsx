@@ -472,9 +472,11 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
       const ow = obj.width || 120;
       const od = obj.depth || obj.height || 100;
       const oh = (meta.height_3d as number) || (obj.object_type === "store" ? 220 : 140);
+      const ox = obj.x;
+      const oz = obj.y;
 
-      const centerWorldX = obj.x + ow / 2;
-      const centerWorldZ = obj.y + od / 2;
+      const centerWorldX = ox + ow / 2;
+      const centerWorldZ = oz + od / 2;
       const basePos = toScreen(centerWorldX, centerWorldZ, 0);
       const topPos = toScreen(centerWorldX, centerWorldZ, oh);
 
@@ -495,47 +497,92 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         const sRef = stores.find((s) => s.id === obj.reference_id);
         const storeName = sRef?.name || (meta.label as string) || "עמדת חנות";
         const imgUrl = (meta.image_url as string) || sRef?.image_url;
-        const sw = ow * zoom * 0.75;
-        const sh = oh * zoom * 0.75;
-        const rotY = (meta.rotation_y as number) ?? (meta.rotation_deg ? (meta.rotation_deg as number) * (Math.PI / 180) : 0);
-
-        ctx.save();
-        ctx.translate(basePos.x, basePos.y - sh / 2);
-        if (rotY) {
-          const cosR = Math.cos(rotY * 0.5);
-          const sinR = Math.sin(rotY * 0.35);
-          ctx.transform(cosR, sinR, 0, 1, 0, 0);
-        }
-
         const storeImg = imgUrl ? getCachedImg(imgUrl) : null;
+
+        // 3D volumetric booth box corners on 2.5D isometric plane
+        const b0 = toScreen(ox, oz, 0);
+        const b1 = toScreen(ox + ow, oz, 0);
+        const b2 = toScreen(ox + ow, oz + od, 0);
+        const b3 = toScreen(ox, oz + od, 0);
+
+        const t0 = toScreen(ox, oz, oh);
+        const t1 = toScreen(ox + ow, oz, oh);
+        const t2 = toScreen(ox + ow, oz + od, oh);
+        const t3 = toScreen(ox, oz + od, oh);
+
+        // Ground shadow
+        ctx.beginPath();
+        ctx.moveTo(b0.x, b0.y);
+        ctx.lineTo(b1.x, b1.y);
+        ctx.lineTo(b2.x, b2.y);
+        ctx.lineTo(b3.x, b3.y);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.fill();
+
+        // Right side wall
+        ctx.beginPath();
+        ctx.moveTo(b1.x, b1.y);
+        ctx.lineTo(b2.x, b2.y);
+        ctx.lineTo(t2.x, t2.y);
+        ctx.lineTo(t1.x, t1.y);
+        ctx.closePath();
+        ctx.fillStyle = "#1e293b";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Front wall
+        ctx.beginPath();
+        ctx.moveTo(b3.x, b3.y);
+        ctx.lineTo(b2.x, b2.y);
+        ctx.lineTo(t2.x, t2.y);
+        ctx.lineTo(t3.x, t3.y);
+        ctx.closePath();
         if (storeImg) {
-          ctx.drawImage(storeImg, -sw / 2, -sh / 2, sw, sh);
+          ctx.save();
+          ctx.clip();
+          const fMinX = Math.min(b3.x, t3.x);
+          const fMaxX = Math.max(b2.x, t2.x);
+          const fMinY = Math.min(t3.y, t2.y);
+          const fMaxY = Math.max(b3.y, b2.y);
+          ctx.drawImage(storeImg, fMinX, fMinY, fMaxX - fMinX, fMaxY - fMinY);
           ctx.restore();
-          ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
-          safeRoundRect(ctx, basePos.x - sw / 2, basePos.y - sh - 22, sw, 20, 8);
-          ctx.fill();
-          ctx.fillStyle = "#ffffff";
-          ctx.font = "bold 11px sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillText(`🏪 ${storeName}`, basePos.x, basePos.y - sh - 8);
         } else {
           ctx.fillStyle = "#3b82f6";
-          ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
-
-          ctx.beginPath();
-          ctx.moveTo(-sw / 2 - 10, -sh / 2);
-          ctx.lineTo(0, -sh / 2 - 25);
-          ctx.lineTo(sw / 2 + 10, -sh / 2);
-          ctx.closePath();
-          ctx.fillStyle = "#f43f5e";
           ctx.fill();
-
-          ctx.fillStyle = "rgba(255,255,255,0.95)";
-          ctx.font = "bold 12px sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillText(`🏪 ${storeName}`, 0, 0);
-          ctx.restore();
         }
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Roof / Awning Canopy (overhanging top)
+        ctx.beginPath();
+        ctx.moveTo(t0.x, t0.y);
+        ctx.lineTo(t1.x, t1.y);
+        ctx.lineTo(t2.x, t2.y);
+        ctx.lineTo(t3.x, t3.y);
+        ctx.closePath();
+        ctx.fillStyle = "#0f172a";
+        ctx.fill();
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Store label badge above booth
+        const labelY = Math.min(t0.y, t1.y, t2.y, t3.y) - 14;
+        ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+        safeRoundRect(ctx, basePos.x - 70, labelY - 14, 140, 22, 8);
+        ctx.fill();
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 11px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(`🏪 ${storeName}`, basePos.x, labelY - 3);
       } else if (obj.object_type === "npc") {
         const npcName = npcs.find((n) => n.id === obj.reference_id)?.name || "NPC";
         ctx.fillStyle = "#a855f7";

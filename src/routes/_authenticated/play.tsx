@@ -75,12 +75,30 @@ function PlayPage() {
   } | null>(null);
   const [activeMapId, setActiveMapId] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
-      return new URLSearchParams(window.location.search).get("mapId") || null;
+      const fromUrl = new URLSearchParams(window.location.search).get("mapId");
+      if (fromUrl) return fromUrl;
+      try {
+        const saved = localStorage.getItem("colt_last_map_id");
+        if (saved) return saved;
+      } catch {}
     }
     return null;
   });
 
   const cacheKey = activeMapId || "main-lobby";
+
+  // Listen for reset to main map event
+  useEffect(() => {
+    const onResetMain = () => {
+      try {
+        localStorage.setItem("colt_last_map_id", "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9");
+      } catch {}
+      setActiveMapId(null);
+      toast.success("חזרת למפה הראשית 🏰");
+    };
+    window.addEventListener("colt-reset-to-main-map", onResetMain);
+    return () => window.removeEventListener("colt-reset-to-main-map", onResetMain);
+  }, []);
 
   // Listen for map updates (e.g. from editor) to purge local cache
   useEffect(() => {
@@ -202,6 +220,15 @@ function PlayPage() {
     },
   });
 
+  // Keep last visited map in localStorage so refreshes always restore player location
+  useEffect(() => {
+    if (mapBundle?.map?.id) {
+      try {
+        localStorage.setItem("colt_last_map_id", mapBundle.map.id);
+      } catch {}
+    }
+  }, [mapBundle?.map?.id]);
+
   const { data: stores = [] } = useQuery({
     queryKey: ["stores"],
     queryFn: async () => (await supabase.from("stores").select("id,slug,name,store_type,image_url").eq("active", true)).data ?? [],
@@ -252,7 +279,13 @@ function PlayPage() {
       return;
     }
     if (kind === "door") {
-      if (extra?.targetMapId) { setActiveMapId(extra.targetMapId); toast.success(t("play.enteredMap") || "Entered a new place"); }
+      if (extra?.targetMapId) {
+        try {
+          localStorage.setItem("colt_last_map_id", extra.targetMapId);
+        } catch {}
+        setActiveMapId(extra.targetMapId);
+        toast.success(t("play.enteredMap") || "Entered a new place");
+      }
       return;
     }
     if (kind === "treasure") {
@@ -334,7 +367,7 @@ function PlayPage() {
   const dimension = (mapBundle?.map as { dimension?: string } | undefined)?.dimension || "2d";
   const is3D = dimension === "3d";
   const isCoolEnv = dimension === "cool_env";
-  const touchInputRef = useRef({ x: 0, y: 0, jump: false });
+  const touchInputRef = useRef<{ x: number; y: number; jump: boolean; rotate: number }>({ x: 0, y: 0, jump: false, rotate: 0 });
 
 
   return (
@@ -464,8 +497,8 @@ function PlayPage() {
               </div>
             )}
 
-            {/* Mobile joystick */}
-            <MobileJoystick touchInputRef={touchInputRef} />
+            {/* Mobile dual joystick controls */}
+            <MobileJoystick touchInputRef={touchInputRef} mode={isCoolEnv ? "cool_env" : is3D ? "3d" : "2d"} />
           </div>
 
 
@@ -867,13 +900,27 @@ function ChatOverlay({ conversationId, name, onClose }: { conversationId: string
   );
 }
 
-function MobileJoystick({ touchInputRef }: { touchInputRef: MutableRefObject<{ x: number; y: number; jump: boolean }> }) {
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
-  const [active, setActive] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+function MobileJoystick({
+  touchInputRef,
+  mode = "2d",
+}: {
+  touchInputRef: MutableRefObject<{ x: number; y: number; jump: boolean; rotate: number }>;
+  mode?: "2d" | "3d" | "cool_env";
+}) {
+  // Move joystick (Left side: bottom-3 start-3)
+  const [moveKnob, setMoveKnob] = useState({ x: 0, y: 0 });
+  const [moveActive, setMoveActive] = useState(false);
+  const moveRef = useRef<HTMLDivElement>(null);
 
-  const update = (clientX: number, clientY: number) => {
-    const el = ref.current;
+  // Camera rotation joystick (Right side: bottom-3 end-3)
+  const [camKnob, setCamKnob] = useState({ x: 0, y: 0 });
+  const [camActive, setCamActive] = useState(false);
+  const camRef = useRef<HTMLDivElement>(null);
+
+  const is3DOrCool = mode === "3d" || mode === "cool_env";
+
+  const updateMove = (clientX: number, clientY: number) => {
+    const el = moveRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
     const cx = r.left + r.width / 2;
@@ -885,46 +932,139 @@ function MobileJoystick({ touchInputRef }: { touchInputRef: MutableRefObject<{ x
     const angle = Math.atan2(dy, dx);
     const nx = (Math.cos(angle) * dist) / max;
     const ny = (Math.sin(angle) * dist) / max;
-    setKnob({ x: Math.cos(angle) * dist, y: Math.sin(angle) * dist });
+    setMoveKnob({ x: Math.cos(angle) * dist, y: Math.sin(angle) * dist });
     touchInputRef.current.x = nx;
     touchInputRef.current.y = ny;
     touchInputRef.current.jump = ny < -0.5;
   };
-  const stop = () => {
-    setActive(false);
-    setKnob({ x: 0, y: 0 });
+
+  const stopMove = () => {
+    setMoveActive(false);
+    setMoveKnob({ x: 0, y: 0 });
     touchInputRef.current.x = 0;
     touchInputRef.current.y = 0;
     touchInputRef.current.jump = false;
   };
 
+  const updateCam = (clientX: number, clientY: number) => {
+    const el = camRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    const max = r.width / 2;
+    const dist = Math.min(Math.hypot(dx, dy), max);
+    const angle = Math.atan2(dy, dx);
+    const nx = (Math.cos(angle) * dist) / max;
+    setCamKnob({ x: Math.cos(angle) * dist, y: 0 }); // Horizontal orbit rotation
+    touchInputRef.current.rotate = nx; // Negative = rotate left (Q), Positive = rotate right (E)
+  };
+
+  const stopCam = () => {
+    setCamActive(false);
+    setCamKnob({ x: 0, y: 0 });
+    touchInputRef.current.rotate = 0;
+  };
+
   return (
-    <div className="pointer-events-none absolute inset-0 md:hidden">
-      <div
-        ref={ref}
-        className="pointer-events-auto absolute bottom-3 end-3 grid h-20 w-20 place-items-center rounded-full border-2 border-white bg-white/60 shadow-xl backdrop-blur touch-none select-none"
-        onTouchStart={(e) => { setActive(true); update(e.touches[0].clientX, e.touches[0].clientY); }}
-        onTouchMove={(e) => { update(e.touches[0].clientX, e.touches[0].clientY); }}
-        onTouchEnd={stop}
-        onTouchCancel={stop}
-        onPointerDown={(e) => { setActive(true); update(e.clientX, e.clientY); (e.target as HTMLElement).setPointerCapture(e.pointerId); }}
-        onPointerMove={(e) => { if (active) update(e.clientX, e.clientY); }}
-        onPointerUp={stop}
-      >
+    <div className="pointer-events-none absolute inset-0 md:hidden select-none">
+      {/* 🎮 Left Side: Movement Virtual Joystick */}
+      <div className="pointer-events-auto absolute bottom-3 start-3 flex flex-col items-center gap-1">
         <div
-          className="pointer-events-none h-8 w-8 rounded-full bg-primary shadow-inner ring-2 ring-white/70"
-          style={{ transform: `translate(${knob.x}px, ${knob.y}px)` }}
-        />
+          ref={moveRef}
+          className="relative grid h-20 w-20 place-items-center rounded-full border-2 border-white/80 bg-black/60 shadow-2xl backdrop-blur-md touch-none"
+          onTouchStart={(e) => {
+            setMoveActive(true);
+            updateMove(e.touches[0].clientX, e.touches[0].clientY);
+          }}
+          onTouchMove={(e) => {
+            updateMove(e.touches[0].clientX, e.touches[0].clientY);
+          }}
+          onTouchEnd={stopMove}
+          onTouchCancel={stopMove}
+          onPointerDown={(e) => {
+            setMoveActive(true);
+            updateMove(e.clientX, e.clientY);
+            (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (moveActive) updateMove(e.clientX, e.clientY);
+          }}
+          onPointerUp={stopMove}
+        >
+          {/* Directional ticks */}
+          <div className="pointer-events-none absolute inset-1 rounded-full border border-white/10" />
+          <div
+            className="pointer-events-none h-8 w-8 rounded-full bg-primary shadow-lg ring-2 ring-white/80 transition-transform duration-75 flex items-center justify-center text-[10px] text-white font-bold"
+            style={{ transform: `translate(${moveKnob.x}px, ${moveKnob.y}px)` }}
+          >
+            🕹️
+          </div>
+        </div>
+        <span className="text-[9px] font-bold text-white/80 bg-black/60 px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+          תנועה
+        </span>
       </div>
-      <div className="pointer-events-auto absolute bottom-4 start-3 flex flex-col items-center gap-1">
-        <button
-          className="grid h-11 w-11 place-items-center rounded-full border-2 border-white bg-primary text-lg text-primary-foreground shadow-xl active:scale-95"
-          onTouchStart={() => { touchInputRef.current.jump = true; }}
-          onTouchEnd={() => { touchInputRef.current.jump = false; }}
-          onPointerDown={() => { touchInputRef.current.jump = true; }}
-          onPointerUp={() => { touchInputRef.current.jump = false; }}
-        >⤒</button>
-      </div>
+
+      {/* 🎥 Right Side: Camera Rotation Joystick (2.5D/3D) OR Jump Button (2D) */}
+      {is3DOrCool ? (
+        <div className="pointer-events-auto absolute bottom-3 end-3 flex flex-col items-center gap-1">
+          {/* Camera Horizontal Orbit Rotation Joystick */}
+          <div
+            ref={camRef}
+            className="relative grid h-20 w-20 place-items-center rounded-full border-2 border-cyan-400/80 bg-black/60 shadow-2xl backdrop-blur-md touch-none"
+            onTouchStart={(e) => {
+              setCamActive(true);
+              updateCam(e.touches[0].clientX, e.touches[0].clientY);
+            }}
+            onTouchMove={(e) => {
+              updateCam(e.touches[0].clientX, e.touches[0].clientY);
+            }}
+            onTouchEnd={stopCam}
+            onTouchCancel={stopCam}
+            onPointerDown={(e) => {
+              setCamActive(true);
+              updateCam(e.clientX, e.clientY);
+              (e.target as HTMLElement).setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              if (camActive) updateCam(e.clientX, e.clientY);
+            }}
+            onPointerUp={stopCam}
+          >
+            {/* Horizontal rotation guide indicators */}
+            <span className="pointer-events-none absolute left-1.5 text-[9px] font-black text-cyan-400/80">⟲</span>
+            <span className="pointer-events-none absolute right-1.5 text-[9px] font-black text-cyan-400/80">⟳</span>
+            <div
+              className="pointer-events-none h-8 w-8 rounded-full bg-cyan-500 shadow-lg ring-2 ring-white/80 transition-transform duration-75 flex items-center justify-center text-[10px] text-black font-extrabold"
+              style={{ transform: `translate(${camKnob.x}px, 0px)` }}
+            >
+              🎥
+            </div>
+          </div>
+          <span className="text-[9px] font-bold text-cyan-300 bg-black/60 px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+            מצלמה 360°
+          </span>
+        </div>
+      ) : (
+        /* 2D Jump button */
+        <div className="pointer-events-auto absolute bottom-4 end-3 flex flex-col items-center gap-1">
+          <button
+            className="grid h-14 w-14 place-items-center rounded-full border-2 border-white bg-primary text-xl text-primary-foreground shadow-2xl active:scale-95"
+            onTouchStart={() => { touchInputRef.current.jump = true; }}
+            onTouchEnd={() => { touchInputRef.current.jump = false; }}
+            onPointerDown={() => { touchInputRef.current.jump = true; }}
+            onPointerUp={() => { touchInputRef.current.jump = false; }}
+          >
+            ⤒
+          </button>
+          <span className="text-[9px] font-bold text-white/80 bg-black/60 px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+            קפיצה
+          </span>
+        </div>
+      )}
     </div>
   );
 }

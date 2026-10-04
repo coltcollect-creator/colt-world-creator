@@ -16,10 +16,10 @@ type Entry = {
 
 export type LiveSample = { x: number; y: number; facing: LiveFacing; moving: boolean };
 
-/** How often we broadcast our own position when moving (ms). ~10 updates/sec is silky smooth with lerp */
-const SEND_MS = 90;
-/** Smoothing rate for remote players (higher = snappier). */
-const SMOOTH_K = 14;
+/** How often we broadcast our own position when moving (ms). ~22 updates/sec over WebSockets is silky smooth */
+const SEND_MS = 45;
+/** Smoothing rate for remote players (higher = snappier, instant response). */
+const SMOOTH_K = 22;
 
 /**
  * Realtime position sync over a Supabase broadcast channel.
@@ -115,30 +115,24 @@ export function useLivePositions(mapId: string | null | undefined, enabled: bool
         facing !== lastFacing.current ||
         moving !== lastMoving.current;
 
-      // If player is not moving and position didn't change:
-      if (!hasMoved && !moving) {
+      if (!moving) {
         // If we already sent the stopped frame, don't send anything more!
         if (stationarySent.current) {
           return;
         }
-      }
-
-      if (hasMoved) {
+        stationarySent.current = true;
+        // Don't throttle the stop event by SEND_MS - send immediately so others see stop instantly!
+      } else {
         stationarySent.current = false;
+        // Throttle only active walking movement
+        if (now - lastSent.current < SEND_MS) return;
       }
-
-      // Throttle when moving to ~10 updates/sec
-      if (now - lastSent.current < SEND_MS) return;
 
       lastSent.current = now;
       lastX.current = rx;
       lastY.current = ry;
       lastFacing.current = facing;
       lastMoving.current = moving;
-
-      if (!moving) {
-        stationarySent.current = true;
-      }
 
       // Send compressed packed array [id, x, y, facing, moving]
       ch.send({
@@ -160,15 +154,23 @@ export function useLivePositions(mapId: string | null | undefined, enabled: bool
       entries.current.delete(id);
       return undefined;
     }
-    const dt = Math.min(0.25, Math.max(0, (now - e.lastSample) / 1000));
-    e.lastSample = now;
-    const a = 1 - Math.exp(-SMOOTH_K * dt);
-    e.x += (e.tx - e.x) * a;
-    e.y += (e.ty - e.y) * a;
 
-    // Snap micro-jitter when very close to target for razor-sharp rendering
-    if (Math.abs(e.tx - e.x) < 0.25) e.x = e.tx;
-    if (Math.abs(e.ty - e.y) < 0.25) e.y = e.ty;
+    // If target position jumped significantly (e.g. teleport/respawn/delayed network), snap immediately to prevent flying across the map
+    const jumpDist = Math.hypot(e.tx - e.x, e.ty - e.y);
+    if (jumpDist > 250) {
+      e.x = e.tx;
+      e.y = e.ty;
+    } else {
+      const dt = Math.min(0.2, Math.max(0, (now - e.lastSample) / 1000));
+      const a = 1 - Math.exp(-SMOOTH_K * dt);
+      e.x += (e.tx - e.x) * a;
+      e.y += (e.ty - e.y) * a;
+
+      // Snap micro-jitter when very close to target for razor-sharp rendering
+      if (Math.abs(e.tx - e.x) < 0.25) e.x = e.tx;
+      if (Math.abs(e.ty - e.y) < 0.25) e.y = e.ty;
+    }
+    e.lastSample = now;
 
     const moving = e.moving && now - e.lastMsg < 1200;
     return { x: e.x, y: e.y, facing: e.facing, moving };
@@ -180,9 +182,14 @@ export function useLivePositions(mapId: string | null | undefined, enabled: bool
       if (!id || id === selfId) return;
       const now = performance.now();
       const prev = entries.current.get(id);
+      
+      // If position changed by more than 200px or no previous record, snap immediately instead of slowly flying across the screen
+      const dist = prev ? Math.hypot(x - prev.x, y - prev.y) : 0;
+      const shouldSnap = !prev || dist > 200;
+
       entries.current.set(id, {
-        x: prev?.x ?? x,
-        y: prev?.y ?? y,
+        x: shouldSnap ? x : prev!.x,
+        y: shouldSnap ? y : prev!.y,
         tx: x,
         ty: y,
         facing: facing ?? prev?.facing ?? "right",

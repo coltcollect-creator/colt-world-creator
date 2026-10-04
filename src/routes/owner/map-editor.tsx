@@ -70,7 +70,12 @@ export const DECOR_PRESETS: Record<string, { label: string; emoji: string }> = {
 function MapEditor() {
   const { t } = useI18n();
   const qc = useQueryClient();
-  const [mapId, setMapId] = useState<string | null>(null);
+  const [mapId, setMapId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("mapId") || null;
+    }
+    return null;
+  });
   const [tool, setTool] = useState<Tool>("select");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickerId, setPickerId] = useState<string>("");

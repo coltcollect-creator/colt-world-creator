@@ -442,7 +442,34 @@ function OwnerConsole() {
       {tab === "dashboard" && <Dashboard />}
       {tab === "messages" && <OwnerMessages />}
       {tab === "broadcast" && <BroadcastPanel />}
-      {tab === "maps" && <ManagedTable schema={SCHEMAS.maps} title={t("owner.tab.maps")} />}
+      {tab === "maps" && (
+        <ManagedTable
+          schema={SCHEMAS.maps}
+          title={t("owner.tab.maps")}
+          extraColumns={[
+            {
+              key: "visual_editor",
+              label: "עורך ויזואלי",
+              render: (row) => (
+                <div className="flex items-center gap-1.5">
+                  <a
+                    href={`/owner/map-editor?mapId=${String(row.id)}`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary transition hover:bg-primary/20"
+                  >
+                    🗺️ ערוך מפה
+                  </a>
+                  <a
+                    href={`/play?mapId=${String(row.id)}`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/60 px-2 py-1 text-[11px] font-medium transition hover:bg-muted"
+                  >
+                    🎮 כניסה
+                  </a>
+                </div>
+              ),
+            },
+          ]}
+        />
+      )}
       {tab === "music" && <MusicPlaylistPanel />}
       {tab === "stores" && <ManagedTable schema={SCHEMAS.stores} title={t("owner.tab.stores")} />}
       {tab === "products" && <ProductsPanel />}

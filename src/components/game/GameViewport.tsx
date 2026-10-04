@@ -106,7 +106,7 @@ type Props = {
   backgroundColor?: string | null;
   backgroundTheme?: string | null;
   backgroundUrl?: string | null;
-  touchInputRef?: MutableRefObject<{ x: number; jump: boolean }>;
+  touchInputRef?: MutableRefObject<{ x: number; y?: number; jump?: boolean; rotate?: number }>;
   onInteract?: (kind: "store" | "npc" | "door" | "treasure", id: string, extra?: { targetMapId?: string }) => void;
   onNearby?: (n: Nearby) => void;
   onInspectPlayer?: (player: OtherPlayer) => void;
@@ -231,9 +231,28 @@ export function GameViewport({
       if (touchInputRef?.current) {
         touchInputRef.current = { x: 0, y: 0, jump: false };
       }
+      // Check localStorage first for instant restoration upon refresh
+      let initialX: number | null = null;
+      let initialY: number | null = null;
+      try {
+        const lx = localStorage.getItem(`colt_last_x_${mapId}`);
+        const ly = localStorage.getItem(`colt_last_y_${mapId}`);
+        if (lx !== null && ly !== null && !isNaN(Number(lx)) && !isNaN(Number(ly))) {
+          initialX = Number(lx);
+          initialY = Number(ly);
+        }
+      } catch {}
+
+      const savedMapId = profile?.current_map_id;
+      const hasSavedPositionForThisMap = !!mapId && savedMapId === mapId;
+      if (initialX === null && profile && hasSavedPositionForThisMap && typeof profile.last_x === "number" && typeof profile.last_y === "number") {
+        initialX = profile.last_x;
+        initialY = profile.last_y;
+      }
+
       const spawn = objects.find((o) => o.object_type === "spawn");
-      s.x = spawn?.x ?? 100;
-      s.y = spawn?.y ?? 100;
+      s.x = initialX ?? spawn?.x ?? 100;
+      s.y = initialY ?? spawn?.y ?? 100;
       s.lastSavedX = s.x;
       s.lastSavedY = s.y;
       s.vx = 0;
@@ -244,15 +263,6 @@ export function GameViewport({
       s.jumpConsumed = false;
       nearbyRef.current = null;
       onNearby?.(null);
-
-      const savedMapId = profile?.current_map_id;
-      const hasSavedPositionForThisMap = !!mapId && savedMapId === mapId;
-      if (profile && hasSavedPositionForThisMap) {
-        s.x = profile.last_x || s.x;
-        s.y = profile.last_y || s.y;
-        s.lastSavedX = s.x;
-        s.lastSavedY = s.y;
-      }
     }
   }, [objects, mapId, onNearby]);
 
@@ -261,12 +271,16 @@ export function GameViewport({
       lastActivityRef.current = Date.now();
     };
     const kd = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || (e.target as HTMLElement)?.isContentEditable) return;
       recordAct();
       stateRef.current.keys[e.key.toLowerCase()] = true;
+      if (e.code) stateRef.current.keys[e.code.toLowerCase()] = true;
     };
     const ku = (e: KeyboardEvent) => {
       recordAct();
       stateRef.current.keys[e.key.toLowerCase()] = false;
+      if (e.code) stateRef.current.keys[e.code.toLowerCase()] = false;
     };
     const onPointer = () => recordAct();
 
@@ -372,9 +386,9 @@ export function GameViewport({
       const tin = touchInputRef?.current;
       const isShift = !!(s.keys["shift"] || s.keys["shiftleft"] || s.keys["shiftright"]);
       const moveSpeed = isShift ? RUN_SPEED : SPEED;
-      const left = s.keys["arrowleft"] || s.keys["a"] || (tin && tin.x < -0.2);
-      const right = s.keys["arrowright"] || s.keys["d"] || (tin && tin.x > 0.2);
-      const jumpKey = !!(s.keys["arrowup"] || s.keys["w"] || s.keys[" "] || (tin && tin.jump));
+      const left = !!(s.keys["arrowleft"] || s.keys["keya"] || s.keys["a"] || s.keys["ש"] || (tin && tin.x < -0.2));
+      const right = !!(s.keys["arrowright"] || s.keys["keyd"] || s.keys["d"] || s.keys["ג"] || (tin && tin.x > 0.2));
+      const jumpKey = !!(s.keys["arrowup"] || s.keys["keyw"] || s.keys["w"] || s.keys["'"] || s.keys[" "] || s.keys["space"] || (tin && tin.jump));
       s.vx = left ? -moveSpeed : right ? moveSpeed : 0;
       if (s.vx < 0) s.facing = -1; else if (s.vx > 0) s.facing = 1;
 
@@ -484,12 +498,20 @@ export function GameViewport({
         const isMoving = s.vx !== 0 || !s.onGround;
         const distMoved = Math.hypot(s.x - s.lastSavedX, s.y - s.lastSavedY);
         const isFirstSave = s.lastSave === 0;
-        const minSaveInterval = 20000; // max once per 20 seconds while walking
+        const minSaveInterval = 8000; // gentle 8 seconds while walking
 
         if (isFirstSave || (distMoved >= 15 && t - s.lastSave > minSaveInterval)) {
           s.lastSave = t;
           s.lastSavedX = s.x;
           s.lastSavedY = s.y;
+
+          // Always persist to localStorage for refresh retention
+          try {
+            localStorage.setItem("colt_last_map_id", mapId);
+            localStorage.setItem(`colt_last_x_${mapId}`, String(Math.round(s.x)));
+            localStorage.setItem(`colt_last_y_${mapId}`, String(Math.round(s.y)));
+          } catch {}
+
           const currentUsername = profile?.display_name || profile?.username || user?.user_metadata?.username || "Player";
           const posData = {
             id: user.id,

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, cleanForFirestore } from "@/integrations/supabase/client";
+import { db } from "@/lib/firebase";
+import { collection, doc, onSnapshot, query, setDoc, where } from "firebase/firestore";
 import { useAuth } from "@/lib/auth-context";
 import type { MapObject } from "@/components/game/GameViewport";
 import { useLivePositions } from "@/hooks/use-live-positions";
@@ -55,7 +57,7 @@ type Props = {
   floorType?: string | null;
   floorColor?: string | null;
   floorTextureUrl?: string | null;
-  touchInputRef?: MutableRefObject<{ x: number; y?: number; jump: boolean }>;
+  touchInputRef?: MutableRefObject<{ x: number; y?: number; jump?: boolean; rotate?: number }>;
   onInteract?: (kind: "store" | "npc" | "door" | "treasure" | "screen", id: string, extra?: { targetMapId?: string; title?: string; text?: string; imageUrl?: string | null }) => void;
   onNearby?: (n: Nearby) => void;
   onInspectPlayer?: (player: OtherPlayer) => void;
@@ -106,12 +108,21 @@ export function CoolEnvironmentViewport({
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const { user, profile } = useAuth();
+  const userRef = useRef(user);
+  userRef.current = user;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+
   const live = useLivePositions(mapId, !!isPublicRoom, user?.id);
   const liveRef = useRef(live);
   liveRef.current = live;
 
   const worldW = width || 2400;
   const worldD = height || 1800;
+
+  const objectsKey = useMemo(() => (objects || []).map((o) => `${o.id}_${o.x}_${o.y}_${o.width}_${o.height}_${o.object_type}_${(o.metadata as Record<string, unknown> | null)?.color || ""}`).join(";"), [objects]);
+  const storesKey = useMemo(() => (stores || []).map((s) => `${s.id}_${s.image_url || ""}_${s.name || ""}`).join(";"), [stores]);
+  const npcsKey = useMemo(() => (npcs || []).map((n) => `${n.id}_${n.sprite_url || ""}`).join(";"), [npcs]);
 
   const [activeNearby, setActiveNearby] = useState<Nearby>(null);
   const activeNearbyRef = useRef<Nearby>(null);
@@ -150,7 +161,7 @@ export function CoolEnvironmentViewport({
   // Camera orbital rotation (Q / E 360-degree smooth perspective)
   const [camAngle, setCamAngle] = useState<number>(0);
   const camAngleRef = useRef<number>(0);
-  camAngleRef.current = camAngle;
+  // Do NOT assign camAngleRef.current = camAngle on render to prevent resetting during animation loop!
 
   // Realtime Player HUD coordinates for Minimap
   const [hudPlayer, setHudPlayer] = useState({ x: 300, z: 300, facing: 0 });
@@ -171,48 +182,96 @@ export function CoolEnvironmentViewport({
 
   // In 2.5D Cool Environment, ALL players (local and remote) uniformly embody
   // the official Colt Bot mascot with the iconic purple hoodie and golden "C" emblem.
-  const [others, setOthers] = useState<OtherPlayer[]>([]);
   const othersRef = useRef<OtherPlayer[]>([]);
-  othersRef.current = others;
 
+  // Speech bubbles dictionary: userId -> { text, until }
+  const bubblesRef = useRef<Map<string, { text: string; until: number }>>(new Map());
+
+  // Listen for realtime chat speech bubbles
+  useEffect(() => {
+    const handleCustomBubble = (e: any) => {
+      const d = e.detail;
+      if (d?.userId && d?.message) {
+        bubblesRef.current.set(d.userId, { text: d.message.slice(0, 120), until: performance.now() + 6000 });
+      }
+    };
+    window.addEventListener("colt-chat-bubble", handleCustomBubble);
+
+    const channel = supabase
+      .channel(`chat-bubbles-25d-${mapId ?? "any"}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages", filter: "channel=eq.global" },
+        (payload) => {
+          const m = payload.new as { user_id: string; message: string };
+          const text = (m.message ?? "").slice(0, 120);
+          bubblesRef.current.set(m.user_id, { text, until: performance.now() + 6000 });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener("colt-chat-bubble", handleCustomBubble);
+      supabase.removeChannel(channel);
+    };
+  }, [mapId]);
+
+  // Realtime Firestore active players subscription
   useEffect(() => {
     if (!isPublicRoom || !mapId) {
-      setOthers([]);
+      othersRef.current = [];
       return;
     }
     let cancelled = false;
-    const load = async () => {
-      const cutoff = new Date(Date.now() - 90 * 1000).toISOString();
-      const { data } = await supabase
-        .from("active_players")
-        .select("user_id, x, y, last_seen")
-        .eq("map_id", mapId)
-        .gt("last_seen", cutoff);
-      if (cancelled || !data) return;
-      const ids = Array.from(new Set(data.map((r) => r.user_id as string)));
-      const usernames = new Map<string, string>();
-      if (ids.length) {
-        const { data: ps } = await supabase.rpc("get_public_profiles", { _ids: ids });
-        for (const p of (ps ?? []) as Array<{ id: string; username: string }>) {
-          usernames.set(p.id, p.username);
+    let unsubSnapshot: (() => void) | null = null;
+
+    try {
+      const q = query(collection(db, "active_players"), where("map_id", "==", mapId));
+      unsubSnapshot = onSnapshot(
+        q,
+        (snapshot) => {
+          if (cancelled) return;
+          const now = Date.now();
+          const cutoff = now - 600 * 1000;
+          const remotePlayers: OtherPlayer[] = [];
+
+          snapshot.forEach((docSnap) => {
+            const d = docSnap.data();
+            const uid = (d.user_id || docSnap.id) as string;
+            if (!uid || uid === user?.id) return;
+            const seenTime = new Date(d.last_seen || 0).getTime();
+            if (d.last_seen && seenTime < cutoff) return;
+
+            const px = typeof d.x === "number" ? d.x : 300;
+            const py = typeof d.y === "number" ? d.y : 300;
+            const facing = d.facing === "left" ? "left" : "right";
+            const moving = Boolean(d.moving);
+
+            liveRef.current?.feed(uid, px, py, facing, moving);
+
+            remotePlayers.push({
+              user_id: uid,
+              x: px,
+              y: py,
+              username: (d.username as string) || "שחקן",
+              avatar_config: (d.avatar_config as Record<string, string>) || null,
+              character_id: (d.character_id as string) || null,
+            });
+          });
+
+          othersRef.current = remotePlayers;
+        },
+        (err) => {
+          console.warn("2.5D Firestore presence onSnapshot notice:", err);
         }
-      }
-      setOthers(
-        data
-          .filter((r) => r.user_id !== user?.id)
-          .map((r) => ({
-            user_id: r.user_id as string,
-            x: Number(r.x) || 0,
-            y: Number(r.y) || 0,
-            username: usernames.get(r.user_id as string) || "שחקן",
-          }))
       );
-    };
-    load();
-    const interval = setInterval(load, 5000);
+    } catch (e) {
+      console.warn("Error setting up 2.5D active_players onSnapshot:", e);
+    }
+
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (unsubSnapshot) unsubSnapshot();
     };
   }, [mapId, isPublicRoom, user?.id]);
 
@@ -231,8 +290,11 @@ export function CoolEnvironmentViewport({
     const keysDown = new Set<string>();
 
     const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || (e.target as HTMLElement)?.isContentEditable) return;
       keysDown.add(e.code);
-      if (e.code === "KeyE" || e.code === "Space") {
+      if (e.key) keysDown.add(e.key.toLowerCase());
+      if (e.code === "KeyE" || e.code === "Space" || e.key === "e" || e.key === "ק") {
         if (activeNearbyRef.current) {
           const nb = activeNearbyRef.current;
           onInteractRef.current?.(nb.kind, nb.id, {
@@ -244,7 +306,10 @@ export function CoolEnvironmentViewport({
         }
       }
     };
-    const onKeyUp = (e: KeyboardEvent) => keysDown.delete(e.code);
+    const onKeyUp = (e: KeyboardEvent) => {
+      keysDown.delete(e.code);
+      if (e.key) keysDown.delete(e.key.toLowerCase());
+    };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
 
@@ -320,6 +385,8 @@ export function CoolEnvironmentViewport({
       const dirLight = new THREE.DirectionalLight(isCyber ? 0x38bdf8 : 0xfffaed, 1.45);
       dirLight.position.set(-800, 1600, 900);
       dirLight.castShadow = true;
+      dirLight.shadow.bias = -0.0005;
+      dirLight.shadow.normalBias = 0.04;
       dirLight.shadow.mapSize.set(2048, 2048);
       dirLight.shadow.camera.left = -3000;
       dirLight.shadow.camera.right = 3000;
@@ -605,30 +672,57 @@ export function CoolEnvironmentViewport({
           boothGroup.rotation.y = rotY;
 
           if (imageUrl) {
-            // 2.5D Single Wall Store Display (45° Isometric perspective)
-            const planeW = ow || 180;
-            const planeH = oh || 180;
+            // 3D Volumetric Booth with thickness & primary texture on all side walls
+            const boothW = ow || 180;
+            const boothH = oh || 180;
+            const boothD = od || 140;
 
             const texLoader = new THREE.TextureLoader();
             const storeTex = texLoader.load(imageUrl);
             storeTex.colorSpace = THREE.SRGBColorSpace;
 
-            const storeMat = new THREE.MeshStandardMaterial({
+            // Material using store primary texture
+            const faceMat = new THREE.MeshStandardMaterial({
               map: storeTex,
-              transparent: true,
-              alphaTest: 0.05,
-              side: THREE.DoubleSide,
-              roughness: 0.4,
+              roughness: 0.55,
+              metalness: 0.05,
             });
 
-            const wallMesh = new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH), storeMat);
-            wallMesh.position.y = planeH / 2;
-            wallMesh.castShadow = true;
-            boothGroup.add(wallMesh);
+            // Roof / counter styled trim material with matte finish to eliminate white glare flickering
+            const trimMat = new THREE.MeshStandardMaterial({
+              color: 0x334155,
+              roughness: 0.85,
+              metalness: 0.0,
+            });
+
+            // Box faces: [right (+x), left (-x), top (+y), bottom (-y), front (+z), back (-z)]
+            // All 4 vertical walls (front, back, left, right) feature the primary store image!
+            const boxMats = [faceMat, faceMat, trimMat, trimMat, faceMat, faceMat];
+            const boothMesh = new THREE.Mesh(new THREE.BoxGeometry(boothW, boothH, boothD), boxMats);
+            boothMesh.position.y = boothH / 2;
+            boothMesh.castShadow = true;
+            boothMesh.receiveShadow = true;
+            boothGroup.add(boothMesh);
+
+            // Realistic 3D Roof Canopy/Awning on top that slightly overhangs without co-planar fighting
+            const awningGeo = new THREE.BoxGeometry(boothW * 1.08, 14, boothD * 1.12);
+            const awningMesh = new THREE.Mesh(awningGeo, trimMat);
+            awningMesh.position.y = boothH + 8;
+            awningMesh.castShadow = true;
+            awningMesh.receiveShadow = true;
+            boothGroup.add(awningMesh);
+
+            // Front counter ledge
+            const counterGeo = new THREE.BoxGeometry(boothW * 1.04, 10, 24);
+            const counterMesh = new THREE.Mesh(counterGeo, trimMat);
+            counterMesh.position.set(0, boothH * 0.42, boothD / 2 + 10);
+            counterMesh.castShadow = true;
+            counterMesh.receiveShadow = true;
+            boothGroup.add(counterMesh);
 
             // Ground shadow disc for realistic floor anchoring
             const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 });
-            const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(planeW * 0.95, od * 0.7), shadowMat);
+            const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(boothW * 1.15, boothD * 1.15), shadowMat);
             shadowMesh.rotation.x = -Math.PI / 2;
             shadowMesh.position.y = 1;
             boothGroup.add(shadowMesh);
@@ -654,7 +748,7 @@ export function CoolEnvironmentViewport({
               const signTex = new THREE.CanvasTexture(signCanvas);
               const signSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTex, transparent: true }));
               signSprite.scale.set(160, 40, 1);
-              signSprite.position.set(0, planeH + 30, 0);
+              signSprite.position.set(0, boothH + 30, 0);
               boothGroup.add(signSprite);
             }
           } else {
@@ -1002,9 +1096,29 @@ export function CoolEnvironmentViewport({
       // ==========================================
       // Fully-Articulated 3D Convention Character
       // ==========================================
+      // Restore player position from localStorage or profile, falling back to spawn
       const spawnObj = objects.find((o) => o.object_type === "spawn");
-      let playerX = spawnObj?.x ?? mapW / 2;
-      let playerZ = spawnObj?.y ?? mapD / 2;
+      let initialPx: number | null = null;
+      let initialPz: number | null = null;
+      try {
+        const lx = localStorage.getItem(`colt_last_x_${mapId}`);
+        const ly = localStorage.getItem(`colt_last_y_${mapId}`);
+        if (lx !== null && ly !== null && !isNaN(Number(lx)) && !isNaN(Number(ly))) {
+          initialPx = Number(lx);
+          initialPz = Number(ly);
+        }
+      } catch {}
+
+      if (initialPx === null && profileRef.current?.current_map_id === mapId && typeof profileRef.current?.last_x === "number") {
+        initialPx = profileRef.current.last_x;
+        initialPz = profileRef.current.last_y;
+      }
+
+      let playerX = initialPx ?? spawnObj?.x ?? mapW / 2;
+      let playerZ = initialPz ?? spawnObj?.y ?? mapD / 2;
+      let lastSavedX = playerX;
+      let lastSavedZ = playerZ;
+      let lastSaveTime = 0;
 
       // Reveal initial fog around spawn immediately
       const initCols = Math.ceil(mapW / FOW_CELL_SIZE);
@@ -1029,11 +1143,53 @@ export function CoolEnvironmentViewport({
       });
       playerPivot.add(localPlayer3D.group);
 
+      // Helper to generate chat speech bubble texture
+      const makeBubbleTexture = (text: string) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 380;
+        canvas.height = 110;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = "rgba(15, 23, 42, 0.94)";
+          safeRoundRect(ctx, 6, 6, 368, 76, 18);
+          ctx.fill();
+          ctx.strokeStyle = "#38bdf8";
+          ctx.lineWidth = 3.5;
+          ctx.stroke();
+
+          // speech bubble triangle tail
+          ctx.beginPath();
+          ctx.moveTo(190 - 12, 82);
+          ctx.lineTo(190, 102);
+          ctx.lineTo(190 + 12, 82);
+          ctx.closePath();
+          ctx.fillStyle = "rgba(15, 23, 42, 0.94)";
+          ctx.fill();
+          ctx.strokeStyle = "#38bdf8";
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 20px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const line = text.length > 22 ? text.slice(0, 20) + "…" : text;
+          ctx.fillText(line, 190, 44);
+        }
+        return new THREE.CanvasTexture(canvas);
+      };
+
+      // Local player speech bubble
+      let localBubbleSprite: import("three").Sprite | null = null;
+      let localBubbleCurrentText = "";
+
       // Multi-player 3D characters registry
       type RemotePlayerMesh = {
         group: import("three").Group;
         char3D: Character3DInstance;
         nameSprite?: import("three").Sprite;
+        bubbleSprite?: import("three").Sprite;
+        bubbleText?: string;
         lastX: number;
         lastZ: number;
       };
@@ -1055,7 +1211,7 @@ export function CoolEnvironmentViewport({
         pCtx.font = "bold 26px sans-serif";
         pCtx.textAlign = "center";
         pCtx.textBaseline = "middle";
-        pCtx.fillText(profile?.username || "אתה", 150, 37);
+        pCtx.fillText(profileRef.current?.username || "אתה", 150, 37);
 
         const pNameTex = new THREE.CanvasTexture(pNameCanvas);
         const pNameSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: pNameTex, transparent: true }));
@@ -1116,22 +1272,28 @@ export function CoolEnvironmentViewport({
       // Animation & Movement Loop
       let lastTime = performance.now();
       let lastHudSync = 0;
+      let lastSentCamAngle = 0;
       const SPEED = 8.2;
 
       const animate = () => {
         if (disposed) return;
         raf = requestAnimationFrame(animate);
-        const now = performance.now();
-        const dt = Math.min(0.06, Math.max(0.001, (now - lastTime) / 1000));
-        lastTime = now;
+        try {
+          const now = performance.now();
+          const dt = Math.min(0.06, Math.max(0.001, (now - lastTime) / 1000));
+          lastTime = now;
 
         // Camera Orbital Rotation with Q and E keys (smooth 360° perspective view)
         const ROT_SPEED = 2.4;
-        if (keysDown.has("KeyQ")) {
+        if (keysDown.has("KeyQ") || keysDown.has("q") || keysDown.has("/")) {
           camAngleRef.current -= ROT_SPEED * dt;
         }
-        if (keysDown.has("KeyE") && !activeNearbyRef.current) {
+        if ((keysDown.has("KeyE") || keysDown.has("e") || keysDown.has("ק")) && !activeNearbyRef.current) {
           camAngleRef.current += ROT_SPEED * dt;
+        }
+        // Rotate camera via mobile right joystick or touch input
+        if (touchInputRef?.current?.rotate) {
+          camAngleRef.current += touchInputRef.current.rotate * ROT_SPEED * dt;
         }
 
         // Determine Movement Vector relative to current Camera View Angle
@@ -1139,10 +1301,10 @@ export function CoolEnvironmentViewport({
         let rawMoveX = 0;
         let rawMoveZ = 0;
 
-        if (keysDown.has("ArrowLeft") || keysDown.has("KeyA")) rawMoveX -= 1;
-        if (keysDown.has("ArrowRight") || keysDown.has("KeyD")) rawMoveX += 1;
-        if (keysDown.has("ArrowUp") || keysDown.has("KeyW")) rawMoveZ -= 1;
-        if (keysDown.has("ArrowDown") || keysDown.has("KeyS")) rawMoveZ += 1;
+        if (keysDown.has("ArrowLeft") || keysDown.has("KeyA") || keysDown.has("a") || keysDown.has("ש")) rawMoveX -= 1;
+        if (keysDown.has("ArrowRight") || keysDown.has("KeyD") || keysDown.has("d") || keysDown.has("ג")) rawMoveX += 1;
+        if (keysDown.has("ArrowUp") || keysDown.has("KeyW") || keysDown.has("w") || keysDown.has("'")) rawMoveZ -= 1;
+        if (keysDown.has("ArrowDown") || keysDown.has("KeyS") || keysDown.has("s") || keysDown.has("ד") || keysDown.has("ן")) rawMoveZ += 1;
 
         if (touchInputRef?.current) {
           if (touchInputRef.current.x) rawMoveX += touchInputRef.current.x;
@@ -1269,6 +1431,29 @@ export function CoolEnvironmentViewport({
           rep.char3D.updateAnimation(rMoving, dt);
           rep.lastX = rx;
           rep.lastZ = rz;
+
+          // Speech Bubble above remote player head
+          const rBubble = bubblesRef.current.get(o.user_id);
+          if (rBubble && rBubble.until > performance.now()) {
+            if (!rep.bubbleSprite) {
+              const bSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeBubbleTexture(rBubble.text), transparent: true }));
+              bSprite.scale.set(140, 42, 1);
+              bSprite.position.set(0, 160, 0);
+              rep.group.add(bSprite);
+              rep.bubbleSprite = bSprite;
+              rep.bubbleText = rBubble.text;
+            } else {
+              if (rep.bubbleText !== rBubble.text) {
+                rep.bubbleText = rBubble.text;
+                rep.bubbleSprite.material.map?.dispose();
+                rep.bubbleSprite.material.map = makeBubbleTexture(rBubble.text);
+                rep.bubbleSprite.material.needsUpdate = true;
+              }
+              rep.bubbleSprite.visible = true;
+            }
+          } else if (rep.bubbleSprite && rep.bubbleSprite.visible) {
+            rep.bubbleSprite.visible = false;
+          }
         }
 
         // Solid wall collision
@@ -1318,19 +1503,24 @@ export function CoolEnvironmentViewport({
           fowRows
         );
         if (discoveredChanged) {
-          saveDiscoveredCells(user?.id, mapId, discoveredCellsRef.current);
+          saveDiscoveredCells(userRef.current?.id, mapId, discoveredCellsRef.current);
           setDiscoveredCells(new Set(discoveredCellsRef.current));
         }
 
         // Throttled HUD update for Minimap
-        if (now - lastHudSync > 60) {
+        if (now - lastHudSync > 120) {
           lastHudSync = now;
-          setHudPlayer({
-            x: Math.round(playerX),
-            z: Math.round(playerZ),
-            facing: localPlayer3D.getCurrentAngle(),
+          const rx = Math.round(playerX);
+          const rz = Math.round(playerZ);
+          const rf = localPlayer3D.getCurrentAngle();
+          setHudPlayer((prev) => {
+            if (prev.x === rx && prev.z === rz && Math.abs(prev.facing - rf) < 0.05) return prev;
+            return { x: rx, z: rz, facing: rf };
           });
-          setCamAngle(curAngle);
+          if (Math.abs(camAngleRef.current - lastSentCamAngle) > 0.04) {
+            lastSentCamAngle = camAngleRef.current;
+            setCamAngle(camAngleRef.current);
+          }
         }
 
         // Check nearby interactive items
@@ -1345,29 +1535,91 @@ export function CoolEnvironmentViewport({
           }
         }
 
+        const prevNb = activeNearbyRef.current;
         if (closest) {
-          const nb: Nearby = {
-            kind: closest.kind,
-            id: closest.id,
-            name: closest.name,
-            ...(closest.targetMapId ? { targetMapId: closest.targetMapId } : {}),
-            ...(closest.text ? { text: closest.text } : {}),
-            ...(closest.imageUrl ? { imageUrl: closest.imageUrl } : {}),
-          };
-          setActiveNearby(nb);
-          onNearbyRef.current?.(nb);
-        } else {
+          if (!prevNb || prevNb.id !== closest.id || prevNb.kind !== closest.kind) {
+            const nb: Nearby = {
+              kind: closest.kind,
+              id: closest.id,
+              name: closest.name,
+              ...(closest.targetMapId ? { targetMapId: closest.targetMapId } : {}),
+              ...(closest.text ? { text: closest.text } : {}),
+              ...(closest.imageUrl ? { imageUrl: closest.imageUrl } : {}),
+            };
+            activeNearbyRef.current = nb;
+            setActiveNearby(nb);
+            onNearbyRef.current?.(nb);
+          }
+        } else if (prevNb !== null) {
+          activeNearbyRef.current = null;
           setActiveNearby(null);
           onNearbyRef.current?.(null);
         }
 
-        // Multiplayer live position broadcast
-        if (mapId && user?.id) {
+        // Local player speech bubble
+        const myBubble = userRef.current?.id ? bubblesRef.current.get(userRef.current.id) : null;
+        if (myBubble && myBubble.until > performance.now()) {
+          if (!localBubbleSprite) {
+            localBubbleSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeBubbleTexture(myBubble.text), transparent: true }));
+            localBubbleSprite.scale.set(140, 42, 1);
+            localBubbleSprite.position.set(0, 160, 0);
+            playerPivot.add(localBubbleSprite);
+            localBubbleCurrentText = myBubble.text;
+          } else {
+            if (localBubbleCurrentText !== myBubble.text) {
+              localBubbleCurrentText = myBubble.text;
+              localBubbleSprite.material.map?.dispose();
+              localBubbleSprite.material.map = makeBubbleTexture(myBubble.text);
+              localBubbleSprite.material.needsUpdate = true;
+            }
+            localBubbleSprite.visible = true;
+          }
+        } else if (localBubbleSprite && localBubbleSprite.visible) {
+          localBubbleSprite.visible = false;
+        }
+
+        // Multiplayer live position broadcast & Firestore presence sync
+        const currentUid = userRef.current?.id;
+        if (mapId && currentUid) {
           const currentFacing: "left" | "right" = localPlayer3D.getCurrentAngle() < 0 ? "left" : "right";
-          liveRef.current?.send(playerX, playerZ, currentFacing, isMoving);
+          liveRef.current?.send(playerX, playerZ, currentFacing, isMoving, false);
+
+          const nowMs = performance.now();
+          const distMoved = Math.hypot(playerX - lastSavedX, playerZ - lastSavedZ);
+          if ((lastSaveTime === 0 && distMoved >= 25) || (distMoved >= 25 && nowMs - lastSaveTime > 8000) || (!isMoving && distMoved >= 25 && nowMs - lastSaveTime > 2000)) {
+            lastSaveTime = nowMs;
+            lastSavedX = playerX;
+            lastSavedZ = playerZ;
+            try {
+              localStorage.setItem("colt_last_map_id", mapId);
+              localStorage.setItem(`colt_last_x_${mapId}`, String(Math.round(playerX)));
+              localStorage.setItem(`colt_last_y_${mapId}`, String(Math.round(playerZ)));
+            } catch {}
+
+            const prof = profileRef.current;
+            const currentUsername = prof?.display_name || prof?.username || userRef.current?.user_metadata?.username || "Player";
+            const posData = {
+              id: currentUid,
+              user_id: currentUid,
+              username: currentUsername,
+              avatar_config: prof?.avatar_config || null,
+              character_id: prof?.character_id || null,
+              map_id: mapId,
+              x: Math.round(playerX),
+              y: Math.round(playerZ),
+              facing: currentFacing,
+              moving: isMoving,
+              last_seen: new Date().toISOString(),
+            };
+            setDoc(doc(db, "active_players", currentUid), cleanForFirestore(posData), { merge: true }).catch(() => {});
+            supabase.from("profiles").update({ last_x: Math.round(playerX), last_y: Math.round(playerZ), current_map_id: mapId }).eq("id", currentUid).then(() => {});
+          }
         }
 
         renderer.render(scene, camera);
+        } catch (frameErr) {
+          console.warn("CoolEnvironmentViewport frame error:", frameErr);
+        }
       };
 
       animate();
@@ -1382,34 +1634,32 @@ export function CoolEnvironmentViewport({
         hostRef.current.innerHTML = "";
       }
     };
-  }, [width, height, viewportWidth, viewportHeight, mapId, objects, stores, npcs, floorType, floorColor, floorTextureUrl, backgroundTheme, profile, user]);
+  }, [worldW, worldD, viewportWidth, viewportHeight, mapId, objectsKey, storesKey, npcsKey, floorType, floorColor, floorTextureUrl, backgroundTheme]);
 
   return (
     <div className="relative w-full h-[640px] md:h-[760px] rounded-3xl overflow-hidden border-4 border-white/20 bg-slate-950 shadow-2xl select-none">
       {/* 3D Canvas Host */}
       <div ref={hostRef} className="w-full h-full" />
 
-      {/* 🗺️ Fog of War Minimap HUD at Bottom-Left (Heroes of Might & Magic Style with Discovery & Modal) */}
-      <div className="absolute bottom-6 left-6 z-20">
-        <FogOfWarMinimap
-          mapW={worldW}
-          mapD={worldD}
-          playerX={hudPlayer.x}
-          playerZ={hudPlayer.z}
-          playerFacing={hudPlayer.facing}
-          camAngle={camAngle}
-          discoveredCells={discoveredCells}
-          objects={objects}
-          stores={stores}
-          npcs={npcs}
-          maps={mapsList}
-          floorColor={floorColor}
-          backgroundTheme={backgroundTheme}
-        />
-      </div>
+      {/* 🗺️ Fog of War Minimap HUD (Top-Left on Mobile above joystick, Bottom-Left on Desktop) */}
+      <FogOfWarMinimap
+        mapW={worldW}
+        mapD={worldD}
+        playerX={hudPlayer.x}
+        playerZ={hudPlayer.z}
+        playerFacing={hudPlayer.facing}
+        camAngle={camAngle}
+        discoveredCells={discoveredCells}
+        objects={objects}
+        stores={stores}
+        npcs={npcs}
+        maps={mapsList}
+        floorColor={floorColor}
+        backgroundTheme={backgroundTheme}
+      />
 
-      {/* Floating Controls Bar at Bottom-Right: Camera Perspective (Q / E) & Zoom */}
-      <div className="absolute bottom-6 right-6 z-20 flex items-center gap-2">
+      {/* Floating Controls Bar at Bottom-Right (Desktop only - mobile uses right joystick and pinch-to-zoom) */}
+      <div className="absolute bottom-6 right-6 z-20 hidden md:flex items-center gap-2">
         {/* Camera Perspective 360° Controls */}
         <div className="flex items-center gap-1 bg-black/75 backdrop-blur-md p-1.5 rounded-2xl border border-white/15 shadow-xl text-white">
           <button
@@ -1418,7 +1668,7 @@ export function CoolEnvironmentViewport({
             title="סובב מבט שמאלה [מקש Q]"
           >
             <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="font-mono text-[10px] hidden sm:inline">Q</span>
+            <span className="font-mono text-[10px]">Q</span>
           </button>
           <button
             onClick={handleResetCamera}
@@ -1432,7 +1682,7 @@ export function CoolEnvironmentViewport({
             className="px-2 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white flex items-center gap-1 text-xs font-bold"
             title="סובב מבט ימינה [מקש E]"
           >
-            <span className="font-mono text-[10px] hidden sm:inline">E</span>
+            <span className="font-mono text-[10px]">E</span>
             <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
           </button>
         </div>
@@ -1496,16 +1746,6 @@ export function CoolEnvironmentViewport({
           </button>
         </div>
       )}
-
-      {/* Movement & View Controls Guide & Badge */}
-      <div className="absolute top-4 left-4 z-10 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-white text-xs">
-        <User className="w-4 h-4 text-purple-400 animate-pulse" />
-        <span>✨ סביבה מגניבה (נקודת מבט 360° חופשית | ערפל קרב מתגלה)</span>
-      </div>
-
-      <div className="absolute top-4 right-4 z-10 hidden md:flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-white/10 text-white/80 text-[11px]">
-        <span>🔄 סיבוב מבט: Q / E | ⌨️ תנועה: WASD / חיצים | 🗺️ לחץ על המפה לפתיחה מלאה</span>
-      </div>
     </div>
   );
 }

@@ -1,4 +1,6 @@
 rules_version = '2';
+// COLT Market World - Firestore Security Rules
+// Release Timestamp: 2026-10-04 13:11 UTC
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -25,3 +27,4 @@ service cloud.firestore {
     }
   }
 }
+

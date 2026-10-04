@@ -468,38 +468,39 @@ export function FogOfWarMinimap({
 
   return (
     <>
-      {/* 🧭 Circular Bottom-Left Radar / Mini-Map */}
-      <div className="fixed bottom-6 left-6 z-30 flex flex-col items-start gap-1.5 select-none animate-in fade-in slide-in-from-bottom-4 duration-300">
+      {/* 🧭 Circular Radar / Mini-Map (Top-Left on mobile above joysticks, Bottom-Left on desktop) */}
+      <div className="absolute top-3 start-3 md:top-auto md:bottom-6 md:start-6 z-20 flex flex-col items-start gap-1 select-none animate-in fade-in slide-in-from-top-2 md:slide-in-from-bottom-4 duration-300">
         <div
           onClick={() => setIsExpanded(true)}
-          className="group relative cursor-pointer rounded-full p-1 bg-black/85 backdrop-blur-md border-2 border-primary shadow-2xl shadow-primary/20 hover:scale-105 hover:border-accent transition-all"
+          className="group relative cursor-pointer rounded-full p-0.5 md:p-1 bg-black/85 backdrop-blur-md border border-primary/80 md:border-2 md:border-primary shadow-2xl shadow-primary/20 hover:scale-105 hover:border-accent transition-all"
           title="לחץ לפתיחת מפת עולם מלאה"
         >
           <canvas
             ref={canvasRef}
-            width={132}
-            height={132}
-            className="rounded-full block"
+            width={128}
+            height={128}
+            className="rounded-full block w-[74px] h-[74px] md:w-[124px] md:h-[124px]"
           />
 
           {/* Center Expand Icon Hover Overlay */}
           <div className="absolute inset-0 rounded-full bg-primary/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-            <Maximize2 className="w-6 h-6 text-white drop-shadow-md" />
+            <Maximize2 className="w-4 h-4 md:w-6 md:h-6 text-white drop-shadow-md" />
           </div>
 
           {/* Discovery Percentage Badge */}
-          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] font-extrabold shadow-md flex items-center gap-1 border border-white/20 whitespace-nowrap">
-            <Sparkles className="w-2.5 h-2.5" />
-            <span>{stats.percentage}% נחשף</span>
+          <div className="absolute -bottom-1.5 md:-bottom-2 left-1/2 -translate-x-1/2 px-1.5 md:px-2.5 py-0.2 md:py-0.5 rounded-full bg-primary text-primary-foreground text-[8px] md:text-[10px] font-extrabold shadow-md flex items-center gap-0.5 md:gap-1 border border-white/20 whitespace-nowrap">
+            <Sparkles className="w-2 h-2 md:w-2.5 md:h-2.5" />
+            <span>{stats.percentage}%</span>
           </div>
         </div>
 
         <button
           onClick={() => setIsExpanded(true)}
-          className="px-2 py-0.5 rounded-lg bg-black/70 hover:bg-black/90 text-white/90 text-[10px] font-bold border border-white/10 shadow flex items-center gap-1"
+          className="px-1.5 md:px-2 py-0.5 rounded-md md:rounded-lg bg-black/70 hover:bg-black/90 text-white/90 text-[9px] md:text-[10px] font-bold border border-white/10 shadow flex items-center gap-1 active:scale-95"
         >
-          <Maximize2 className="w-3 h-3 text-primary" />
-          <span>מפה מלאה</span>
+          <Maximize2 className="w-2.5 h-2.5 md:w-3 md:h-3 text-primary" />
+          <span className="hidden sm:inline">מפה מלאה</span>
+          <span className="sm:hidden">מפה</span>
         </button>
       </div>
 

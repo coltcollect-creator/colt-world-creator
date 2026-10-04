@@ -24,19 +24,22 @@ export function buildDecor3DGroup(
     // ==========================================
     case "reception_luxury": {
       // Marble counter base
-      const baseMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.2 });
-      const marbleMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.15, metalness: 0.1 });
-      const goldMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.2, metalness: 0.8 });
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5, metalness: 0.1 });
+      const marbleMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4, metalness: 0.05 });
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.4, metalness: 0.5 });
 
       // Curved / layered counter
       const desk = new THREE.Mesh(new THREE.BoxGeometry(ow, oh * 0.8, od * 0.6), marbleMat);
       desk.position.set(0, (oh * 0.8) / 2, 0);
       desk.castShadow = true;
+      desk.receiveShadow = true;
       group.add(desk);
 
-      // Gold kickplate & top trim
-      const goldTrim = new THREE.Mesh(new THREE.BoxGeometry(ow + 4, 8, od * 0.6 + 4), goldMat);
-      goldTrim.position.set(0, oh * 0.8 - 4, 0);
+      // Gold kickplate & top trim positioned cleanly above the counter without co-planar fighting
+      const goldTrim = new THREE.Mesh(new THREE.BoxGeometry(ow + 4, 6, od * 0.6 + 4), goldMat);
+      goldTrim.position.set(0, oh * 0.8 + 3, 0);
+      goldTrim.castShadow = true;
+      goldTrim.receiveShadow = true;
       group.add(goldTrim);
 
       const goldBase = new THREE.Mesh(new THREE.BoxGeometry(ow + 2, 6, od * 0.6 + 2), goldMat);
@@ -45,18 +48,19 @@ export function buildDecor3DGroup(
 
       // Reception Computer Monitor
       const monitor = new THREE.Mesh(new THREE.BoxGeometry(40, 26, 6), baseMat);
-      monitor.position.set(0, oh * 0.8 + 15, -od * 0.1);
+      monitor.position.set(0, oh * 0.8 + 16, -od * 0.1);
+      monitor.castShadow = true;
       group.add(monitor);
 
       const screenFace = new THREE.Mesh(
         new THREE.PlaneGeometry(36, 22),
         new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
       );
-      screenFace.position.set(0, oh * 0.8 + 15, -od * 0.1 + 3.2);
+      screenFace.position.set(0, oh * 0.8 + 16, -od * 0.1 + 3.2);
       group.add(screenFace);
 
       const stand = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 12), baseMat);
-      stand.position.set(0, oh * 0.8 + 6, -od * 0.1);
+      stand.position.set(0, oh * 0.8 + 8, -od * 0.1);
       group.add(stand);
       break;
     }

@@ -76,6 +76,17 @@ function AuthedLayout() {
     },
   });
 
+  const handleReturnToMainMap = () => {
+    try {
+      localStorage.setItem("colt_last_map_id", "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9");
+      localStorage.removeItem("colt_last_x_f5bb3160-7415-4f62-b72c-f04d1fcbd1a9");
+      localStorage.removeItem("colt_last_y_f5bb3160-7415-4f62-b72c-f04d1fcbd1a9");
+    } catch {}
+    window.dispatchEvent(new CustomEvent("colt-reset-to-main-map"));
+    setMenuOpen(false);
+    navigate({ to: "/play" });
+  };
+
   useEffect(() => {
     if (loading || !user || !profile) return;
     const hasCharacter = Boolean(
@@ -109,6 +120,15 @@ function AuthedLayout() {
             <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-md">C</div>
             <span className="truncate text-sm sm:text-base">{t("app.name")}</span>
           </Link>
+          <button
+            type="button"
+            onClick={handleReturnToMainMap}
+            className="hidden sm:inline-flex items-center gap-1 rounded-full bg-sky-500/15 border border-sky-500/30 px-2.5 py-1 text-xs font-bold text-sky-700 dark:text-sky-300 shadow-sm hover:bg-sky-500/25 active:scale-95 transition-all"
+            title="חזרה למפה הראשית"
+          >
+            <span>🏰</span>
+            <span>מפה ראשית</span>
+          </button>
         </div>
         <nav data-tour="nav" className="hidden gap-1 lg:flex">
           {NAV.map((n) => (
@@ -129,20 +149,26 @@ function AuthedLayout() {
           <PwaInstallButton />
           <TourButton />
           {profile && (
-            <>
-              <Link to="/credits" className="chrome-panel px-2.5 py-1 text-[11px] md:text-xs font-bold hover:border-primary transition-colors">
-                💎 {profile.credits}
-              </Link>
+            <div className="flex items-center gap-2">
+              {/* Unified Gems & XP Bubble */}
               <Link
-                to="/profile"
-                title={`${profile.xp || 0} XP`}
-                className="hidden sm:inline-flex items-center gap-1.5 chrome-panel px-2.5 py-1 text-[11px] md:text-xs hover:border-primary transition-colors"
+                to="/credits"
+                title={`יתרת ג'מים: 💎 ${profile.credits} | רמה: ⭐ Lv ${profile.level} (${profile.xp || 0} XP)`}
+                className="chrome-panel flex items-center gap-2 rounded-full px-2.5 sm:px-3 py-1 text-[11px] sm:text-xs font-bold shadow-sm hover:border-primary transition-all"
               >
-                <span className="font-black text-amber-500">⭐ Lv {profile.level}</span>
-                <span className="text-[10px] text-muted-foreground font-mono">({profile.xp || 0} XP)</span>
+                <span className="flex items-center gap-1 text-sky-600 dark:text-sky-400 font-extrabold">
+                  <span className="text-xs sm:text-sm">💎</span>
+                  <span>{Number(profile.credits || 0).toLocaleString()}</span>
+                </span>
+                <span className="h-3 w-[1px] bg-border" />
+                <span className="flex items-center gap-1 text-amber-500 font-extrabold">
+                  <span className="text-xs">⭐</span>
+                  <span>Lv {profile.level}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground font-normal">({Number(profile.xp || 0).toLocaleString()} XP)</span>
+                </span>
               </Link>
-              <span className="hidden md:inline font-semibold">{profile.username}</span>
-            </>
+              <span className="hidden md:inline font-semibold text-xs text-foreground/90">{profile.username}</span>
+            </div>
           )}
           {!isVendor && (
             <Link to="/vendor" className="hidden sm:inline rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground shadow">
@@ -172,20 +198,39 @@ function AuthedLayout() {
               <button onClick={() => setMenuOpen(false)} className="grid h-8 w-8 place-items-center rounded-full bg-muted">✕</button>
             </div>
             {profile && (
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-                <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/15 font-bold">{profile.username?.slice(0,1)?.toUpperCase() ?? "?"}</div>
-                <div className="min-w-0">
+              <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 font-bold text-base">{profile.username?.slice(0,1)?.toUpperCase() ?? "?"}</div>
+                <div className="min-w-0 flex-1">
                   <div className="truncate font-semibold text-sm">{profile.username}</div>
-                  <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
-                    <span>💎 {profile.credits}</span>
-                    <span>·</span>
-                    <span className="font-bold text-amber-500">⭐ Lv {profile.level}</span>
-                    <span className="text-[10px] font-mono">({profile.xp || 0} XP)</span>
+                  <div className="mt-1 flex items-center gap-2 rounded-full bg-muted/70 px-2.5 py-0.5 w-fit border border-border/50 text-[11px]">
+                    <span className="flex items-center gap-1 text-sky-600 dark:text-sky-400 font-bold">
+                      <span>💎</span>
+                      <span>{Number(profile.credits || 0).toLocaleString()}</span>
+                    </span>
+                    <span className="h-2.5 w-[1px] bg-border" />
+                    <span className="flex items-center gap-1 text-amber-500 font-bold">
+                      <span>⭐</span>
+                      <span>Lv {profile.level}</span>
+                      <span className="text-[9px] font-mono text-muted-foreground font-normal">({Number(profile.xp || 0).toLocaleString()} XP)</span>
+                    </span>
                   </div>
                 </div>
               </div>
             )}
-            <nav className="flex-1 overflow-y-auto p-2">
+            <nav className="flex-1 overflow-y-auto p-2 space-y-1">
+              {/* Return to Main Map in Mobile Menu */}
+              <button
+                type="button"
+                onClick={handleReturnToMainMap}
+                className="w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-bold bg-sky-500/10 text-sky-700 dark:text-sky-300 hover:bg-sky-500/20 active:scale-[0.98] transition-all"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="text-lg">🏰</span>
+                  <span>חזרה למפה הראשית</span>
+                </span>
+                <span className="text-xs opacity-70">חזור ↵</span>
+              </button>
+
               {NAV.map((n) => (
                 <Link
                   key={n.to}
