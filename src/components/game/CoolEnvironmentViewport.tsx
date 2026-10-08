@@ -121,7 +121,16 @@ export function CoolEnvironmentViewport({
   const worldW = width || 2400;
   const worldD = height || 1800;
 
-  const objectsKey = useMemo(() => (objects || []).map((o) => `${o.id}_${o.x}_${o.y}_${o.width}_${o.height}_${o.object_type}_${(o.metadata as Record<string, unknown> | null)?.color || ""}`).join(";"), [objects]);
+  const objectsKey = useMemo(
+    () =>
+      (objects || [])
+        .map(
+          (o) =>
+            `${o.id}_${o.x}_${o.y}_${o.width}_${o.height}_${o.depth || ""}_${o.object_type}_${JSON.stringify(o.metadata || {})}`
+        )
+        .join(";"),
+    [objects]
+  );
   const storesKey = useMemo(() => (stores || []).map((s) => `${s.id}_${s.image_url || ""}_${s.name || ""}`).join(";"), [stores]);
   const npcsKey = useMemo(() => (npcs || []).map((n) => `${n.id}_${n.sprite_url || ""}`).join(";"), [npcs]);
 

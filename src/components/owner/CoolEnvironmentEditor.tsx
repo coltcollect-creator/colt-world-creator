@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, resetFirestoreCache } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ImageUpload } from "@/components/owner/ImageUpload";
 import { FLOOR_TYPES, makeFloorCanvas, type FloorType } from "@/lib/floor-textures";
@@ -8,6 +8,7 @@ import { Sparkles, Eye, Move, Plus, Trash2, RotateCw, RotateCcw, Monitor, ZoomIn
 import { SpecializedNpcEditor } from "@/components/owner/SpecializedNpcEditor";
 import { ALL_DECOR_PRESETS, DECOR_CATEGORIES, type DecorCategory, type DecorPresetItem } from "@/lib/decor-catalog";
 import { SPECIALIZED_NPCS, ARCADE_MINIGAMES } from "@/lib/npcs-system";
+import { clearAllMapCaches } from "@/lib/map-publishing";
 
 type ObjRow = {
   id: string;
@@ -139,6 +140,8 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
     if (error) toast.error(error.message);
     else {
       toast.success("מימדי המפה עודכנו בהצלחה!");
+      clearAllMapCaches(map.id);
+      resetFirestoreCache("maps");
       qc.invalidateQueries({ queryKey: ["all-maps"] });
       qc.invalidateQueries({ queryKey: ["active-map"] });
     }
@@ -149,6 +152,8 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
     if (error) toast.error(error.message);
     else {
       toast.success("הגדרות הסביבה עודכנו בהצלחה!");
+      clearAllMapCaches(map.id);
+      resetFirestoreCache("maps");
       qc.invalidateQueries({ queryKey: ["all-maps"] });
       qc.invalidateQueries({ queryKey: ["active-map"] });
     }
@@ -905,7 +910,9 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
       const obj = objects.find((o) => o.id === drag.current!.id);
       if (obj) {
         await supabase.from("map_objects").update({ x: obj.x, y: obj.y } as never).eq("id", obj.id);
+        clearAllMapCaches(map.id);
         qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+        qc.invalidateQueries({ queryKey: ["active-map"] });
       }
     }
     drag.current = null;
@@ -1078,7 +1085,9 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
     if (error) toast.error(error.message);
     else {
       toast.success(tool === "room" ? "החדר נוצר בהצלחה!" : "האלמנט הוצב בהצלחה!");
+      clearAllMapCaches(map.id);
       qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+      qc.invalidateQueries({ queryKey: ["active-map"] });
     }
   };
 
@@ -1089,7 +1098,9 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
     else {
       toast.success("נמחק");
       setSelectedId(null);
+      clearAllMapCaches(map.id);
       qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+      qc.invalidateQueries({ queryKey: ["active-map"] });
     }
   };
 
@@ -1607,6 +1618,38 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
             <Target className="w-3.5 h-3.5" />
             <span>מרכז</span>
           </button>
+
+          <div className="h-4 w-[1px] bg-white/20 mx-1" />
+
+          {/* Quick Clear Cache */}
+          <button
+            onClick={() => {
+              clearAllMapCaches(map.id);
+              resetFirestoreCache("map_objects");
+              resetFirestoreCache("map_versions");
+              resetFirestoreCache("maps");
+              qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+              qc.invalidateQueries({ queryKey: ["active-map"] });
+              toast.success("מטמון המפה נוקה! ✨");
+            }}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold"
+            title="נקה מטמון של מפה זו ורענן מהשרת"
+          >
+            <span>🧹</span>
+            <span>נקה מטמון</span>
+          </button>
+
+          {/* Publish Live */}
+          {onPublish && (
+            <button
+              onClick={() => onPublish()}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold shadow-lg hover:scale-105 active:scale-95 transition-all"
+              title="פרסם שינויים בלייב ונקה מטמון לכל השחקנים"
+            >
+              <span>🚀</span>
+              <span>פרסום בלייב</span>
+            </button>
+          )}
         </div>
 
         <canvas

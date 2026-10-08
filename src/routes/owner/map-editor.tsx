@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, resetFirestoreCache } from "@/integrations/supabase/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useI18n, LanguageSwitcher } from "@/lib/i18n";
@@ -11,6 +11,7 @@ import { MAP_THEMES, renderAnimatedMapBackground, type MapBackgroundTheme } from
 import { ALL_DECOR_PRESETS, DECOR_CATEGORIES } from "@/lib/decor-catalog";
 import { drawDecor2DPreset } from "@/lib/decor-2d-drawer";
 import { SPECIALIZED_NPCS, ARCADE_MINIGAMES } from "@/lib/npcs-system";
+import { publishMapVersion, clearAllMapCaches } from "@/lib/map-publishing";
 
 
 export const Route = createFileRoute("/owner/map-editor")({ component: MapEditor });
@@ -472,13 +473,30 @@ function MapEditor() {
   };
 
   const publish = async () => {
-    if (!version) return;
-    await supabase.from("map_versions").update({ status: "archived" }).eq("map_id", version.map_id).eq("status", "published");
-    const { error } = await supabase.from("map_versions").update({ status: "published" }).eq("id", version.id);
-    if (error) { toast.error(error.message); return; }
-    toast.success("פורסם!");
+    if (!version || !mapId) return;
+    const ok = await publishMapVersion({
+      mapId,
+      versionId: version.id,
+      mapName: map?.name || "מפה",
+    });
+    if (ok) {
+      qc.invalidateQueries({ queryKey: ["editor-version", mapId] });
+      qc.invalidateQueries({ queryKey: ["editor-objects", version.id] });
+      qc.invalidateQueries({ queryKey: ["active-map"] });
+      qc.invalidateQueries({ queryKey: ["all-maps"] });
+    }
+  };
+
+  const handleClearCache = () => {
+    clearAllMapCaches(mapId ?? undefined);
+    resetFirestoreCache("map_objects");
+    resetFirestoreCache("map_versions");
+    resetFirestoreCache("maps");
+    qc.invalidateQueries({ queryKey: ["editor-objects", version?.id] });
     qc.invalidateQueries({ queryKey: ["editor-version", mapId] });
     qc.invalidateQueries({ queryKey: ["active-map"] });
+    qc.invalidateQueries({ queryKey: ["all-maps"] });
+    toast.success("מטמון המפה נוקה לחלוטין! הנתונים נטענים מחדש מהשרת ✨");
   };
 
   return (
@@ -517,7 +535,23 @@ function MapEditor() {
           >
             {map?.is_active ? "⭐ מפה פעילה לשחקנים" : "☆ הפוך לפעילה"}
           </button>
-          <button onClick={publish} className="btn-plastic !px-3 !py-1 text-xs">🚀 פרסום</button>
+          <button
+            onClick={handleClearCache}
+            type="button"
+            className="rounded-xl border border-border/80 bg-background/80 px-2.5 py-1 text-xs font-bold hover:bg-muted transition-all"
+            title="נקה מטמון ורענן את המפה ישירות משרת מסד הנתונים"
+          >
+            🧹 נקה מטמון
+          </button>
+          <button
+            onClick={publish}
+            type="button"
+            className="btn-plastic !px-3.5 !py-1 text-xs font-bold flex items-center gap-1 shadow-md hover:scale-105 active:scale-95 transition-transform"
+            title="פרסם את הגרסה הזו בלייב לכל השחקנים ונקה מטמון בכל המערכת"
+          >
+            <span>🚀</span>
+            <span>פרסום בלייב</span>
+          </button>
           <LanguageSwitcher />
           <Link to="/owner" className="chrome-panel px-3 py-1">← {t("owner.title")}</Link>
           <Link to={mapId ? `/play?mapId=${mapId}` : "/play"} className="chrome-panel px-3 py-1 font-bold">{t("owner.enter")}</Link>

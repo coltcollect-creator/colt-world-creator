@@ -67,6 +67,16 @@ const SHARED_FIRESTORE_TABLES = new Set([
 
 const lastFirestoreFetchTime: Record<string, number> = {};
 
+export function resetFirestoreCache(table?: string) {
+  if (table) {
+    delete lastFirestoreFetchTime[table];
+  } else {
+    for (const k of Object.keys(lastFirestoreFetchTime)) {
+      delete lastFirestoreFetchTime[k];
+    }
+  }
+}
+
 export interface User {
   id: string;
   email?: string;
@@ -584,6 +594,15 @@ class QueryBuilder {
             const snap = await getDocs(collection(db, this.colName));
             const remoteIds = new Set(snap.docs.map((d) => d.id));
             if (!snap.empty) {
+              // If syncing map_objects or map_versions, prune local items that were deleted in Firestore
+              if (this.colName === "map_objects" || this.colName === "map_versions") {
+                const currentLocal = gameDataStore.getTable(this.colName);
+                for (const loc of currentLocal) {
+                  if (loc.id && !remoteIds.has(String(loc.id))) {
+                    gameDataStore.deleteRow(this.colName, loc.id);
+                  }
+                }
+              }
               for (const d of snap.docs) {
                 if (!gameDataStore.isDeleted(this.colName, d.id)) {
                   const row = { ...d.data(), id: d.id };
@@ -591,14 +610,16 @@ class QueryBuilder {
                 }
               }
             }
-            // Auto-seed any valid local items missing in Firestore
-            const currentLocal = gameDataStore.getTable(this.colName);
-            for (const loc of currentLocal) {
-              if (loc.id && !remoteIds.has(String(loc.id)) && !gameDataStore.isDeleted(this.colName, loc.id)) {
-                try {
-                  const docRef = doc(db, this.colName, String(loc.id));
-                  void setDoc(docRef, cleanForFirestore(loc), { merge: true });
-                } catch {}
+            // Auto-seed any valid local items missing in Firestore (avoid reviving deleted map_objects)
+            if (this.colName !== "map_objects" && this.colName !== "map_versions") {
+              const currentLocal = gameDataStore.getTable(this.colName);
+              for (const loc of currentLocal) {
+                if (loc.id && !remoteIds.has(String(loc.id)) && !gameDataStore.isDeleted(this.colName, loc.id)) {
+                  try {
+                    const docRef = doc(db, this.colName, String(loc.id));
+                    void setDoc(docRef, cleanForFirestore(loc), { merge: true });
+                  } catch {}
+                }
               }
             }
           } catch (e) {

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, resetFirestoreCache } from "@/integrations/supabase/client";
 import { GameViewport, type MapObject } from "@/components/game/GameViewport";
 import { Game3DViewport } from "@/components/game/Game3DViewport";
 import { CoolEnvironmentViewport } from "@/components/game/CoolEnvironmentViewport";
@@ -16,6 +16,7 @@ import { AuctionView } from "@/components/game/AuctionView";
 import { LiveRipView } from "@/components/game/LiveRipView";
 import { TreasureView } from "@/components/game/TreasureView";
 import { PlayerInspectModal } from "@/components/chat/PlayerInspectModal";
+import { subscribeToMapPublishEvents, clearAllMapCaches } from "@/lib/map-publishing";
 
 import { SkinsMarket } from "@/components/game/SkinsMarket";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -110,6 +111,8 @@ function PlayPage() {
 
   const cacheKey = activeMapId || "main-lobby";
 
+  const queryClient = useQueryClient();
+
   // Listen for reset to main map event
   useEffect(() => {
     const onResetMain = () => {
@@ -123,16 +126,21 @@ function PlayPage() {
     return () => window.removeEventListener("colt-reset-to-main-map", onResetMain);
   }, []);
 
-  // Listen for map updates (e.g. from editor) to purge local cache
+  // Listen for live map publishing events (from Firestore manifest, BroadcastChannel, and window events)
   useEffect(() => {
-    const onMapUpdated = () => {
-      try {
-        localStorage.removeItem(`colt_map_bundle_${cacheKey}`);
-      } catch {}
-    };
-    window.addEventListener("colt-map-updated", onMapUpdated);
-    return () => window.removeEventListener("colt-map-updated", onMapUpdated);
-  }, [cacheKey]);
+    const unsub = subscribeToMapPublishEvents((detail) => {
+      clearAllMapCaches(detail?.mapId);
+      resetFirestoreCache("map_objects");
+      resetFirestoreCache("map_versions");
+      resetFirestoreCache("maps");
+
+      queryClient.invalidateQueries({ queryKey: ["active-map"] });
+      queryClient.invalidateQueries({ queryKey: ["active-map", activeMapId] });
+      queryClient.refetchQueries({ queryKey: ["active-map", activeMapId] });
+      toast.info("המפה עודכנה בלייב לגרסה החדשה ביותר! 🔄", { duration: 3000 });
+    });
+    return () => unsub();
+  }, [activeMapId, queryClient]);
 
   const { data: mapBundle } = useQuery({
     queryKey: ["active-map", activeMapId],
@@ -201,8 +209,19 @@ function PlayPage() {
 
         const verId = version?.id || "34e2d77d-a542-4f2b-9425-cfe269c18636";
 
-        // Fast path: if cached map exists and the version ID hasn't changed, reuse cached objects!
-        if (cached && cached.map?.id === currentMap.id && cached.version?.id === verId && cached.objects?.length > 0) {
+        const currentPublishToken = (currentMap as any).publish_token || version?.publish_token;
+        const cachedPublishToken = cached?.map?.publish_token || cached?.version?.publish_token || cached?.publish_token;
+
+        // Fast path: reuse cached objects ONLY if version AND publish_token match and are still fresh
+        const isCacheValid =
+          cached &&
+          cached.map?.id === currentMap.id &&
+          cached.version?.id === verId &&
+          cached.objects?.length > 0 &&
+          (!currentPublishToken || cachedPublishToken === currentPublishToken) &&
+          (!version?.updated_at || cached.version?.updated_at === version.updated_at);
+
+        if (isCacheValid) {
           return cached;
         }
 
@@ -227,7 +246,12 @@ function PlayPage() {
             ];
 
         const finalObjs = objs && objs.length > 0 ? objs : fallbackObjects;
-        const result = { map: currentMap, objects: finalObjs as unknown as MapObject[], version: version || { id: verId } };
+        const result = {
+          map: currentMap,
+          objects: finalObjs as unknown as MapObject[],
+          version: version || { id: verId },
+          publish_token: currentPublishToken || String(Date.now()),
+        };
         saveStoredMapBundle(cacheKey, result);
         return result;
       } catch (err) {
@@ -448,6 +472,36 @@ function PlayPage() {
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_260px]">
         <div>
+          <div className="flex items-center justify-between mb-1.5 px-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black tracking-wide text-foreground/80">
+                {mapBundle?.map?.name || "מפה"}
+              </span>
+              <span className="text-[10px] font-bold text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full border border-border/40">
+                {isCoolEnv ? "✨ 2.5D עומק" : is3D ? "🧊 3D" : "🎬 2D"}
+              </span>
+            </div>
+
+            <button
+              onClick={() => {
+                clearAllMapCaches(activeMapId ?? undefined);
+                resetFirestoreCache("map_objects");
+                resetFirestoreCache("map_versions");
+                resetFirestoreCache("maps");
+                queryClient.invalidateQueries({ queryKey: ["active-map"] });
+                queryClient.invalidateQueries({ queryKey: ["active-map", activeMapId] });
+                queryClient.refetchQueries({ queryKey: ["active-map", activeMapId] });
+                toast.success("המפה רועננה והמטמון נוקה ישירות מהשרת! 🔄");
+              }}
+              type="button"
+              className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground hover:text-foreground bg-background/80 hover:bg-muted/80 border border-border/60 px-2.5 py-0.5 rounded-full shadow-xs transition-all cursor-pointer"
+              title="נקה מטמון ורענן את המפה ישירות מהשרת"
+            >
+              <span>🔄</span>
+              <span>רענן מפה</span>
+            </button>
+          </div>
+
           <div data-tour="game-viewport" className="relative">
             {mapBundle?.map ? (
               isCoolEnv ? (
