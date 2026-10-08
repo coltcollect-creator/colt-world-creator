@@ -335,7 +335,7 @@ export async function checkAndApplyLevelUp(
       oldLevel,
       newLevel,
       rewards: rewardsGranted,
-      newCredits,
+      newCredits: currentCredits,
       newXp: currentXp,
     };
   }
