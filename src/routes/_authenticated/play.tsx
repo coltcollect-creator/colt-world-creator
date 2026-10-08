@@ -290,10 +290,16 @@ function PlayPage() {
 
   // NPC contact = start conversation. Store contact = open catalog modal.
   const openInteraction = async (
-    kind: "store" | "npc" | "door" | "treasure" | "screen",
+    kind: "store" | "npc" | "door" | "treasure" | "screen" | "arcade",
     id: string,
-    extra?: { targetMapId?: string; title?: string; text?: string; imageUrl?: string | null }
+    extra?: { targetMapId?: string; title?: string; text?: string; imageUrl?: string | null; minigameId?: string }
   ) => {
+    if (kind === "arcade") {
+      const gId = extra?.minigameId || id;
+      const normalized = gId.includes("pack") ? "pack_rip" : gId.includes("grading") ? "grading_masher" : "catch_card";
+      setActiveMinigame(normalized);
+      return;
+    }
     if (kind === "screen") {
       setScreenModalData({
         title: extra?.title || "מסך תצוגה",
@@ -440,41 +446,6 @@ function PlayPage() {
     <div className="mx-auto max-w-[1600px] p-2 md:p-4">
       <QuestProgressToast />
 
-      {/* 🕹️ Arcade Minigames Quick Access Bar */}
-      <div className="mb-2.5 flex items-center justify-between gap-2 rounded-2xl bg-slate-900/90 border border-slate-700/80 px-3 py-1.5 shadow-md backdrop-blur-md">
-        <div className="flex items-center gap-2 text-xs font-black text-amber-400">
-          <Gamepad2 className="w-4 h-4 text-amber-400 animate-pulse" />
-          <span className="hidden sm:inline">🕹️ מיני-משחקי ארקייד ביריד:</span>
-          <span className="sm:hidden">🕹️ משחקים:</span>
-        </div>
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveMinigame("catch_card")}
-            className="flex items-center gap-1 rounded-xl bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 text-[11px] font-bold text-amber-300 hover:bg-amber-500/25 active:scale-95 transition-all shrink-0"
-          >
-            <span>🃏</span>
-            <span>תפוס את הקלף</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveMinigame("pack_rip")}
-            className="flex items-center gap-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/25 active:scale-95 transition-all shrink-0"
-          >
-            <span>✂️</span>
-            <span>קריעת בוסטר</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveMinigame("grading_masher")}
-            className="flex items-center gap-1 rounded-xl bg-cyan-500/15 border border-cyan-500/30 px-2.5 py-1 text-[11px] font-bold text-cyan-300 hover:bg-cyan-500/25 active:scale-95 transition-all shrink-0"
-          >
-            <span>🔍</span>
-            <span>צחצוח ל-PSA 10</span>
-          </button>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_260px]">
         <div>
           <div data-tour="game-viewport" className="relative">
@@ -552,9 +523,21 @@ function PlayPage() {
               <div className="pointer-events-none absolute inset-x-0 bottom-2 grid place-items-center px-2 md:bottom-4">
                 <div className="pointer-events-auto flex max-w-full flex-nowrap items-center gap-1 rounded-full border-2 border-white bg-white/95 px-2 py-1 shadow-2xl backdrop-blur md:gap-2 md:border-4 md:px-4 md:py-2">
                   <span className="text-base md:text-2xl">
-                    {nearby.kind === "store" ? "🏪" : nearby.kind === "door" ? "🚪" : nearby.kind === "treasure" ? "🧰" : "🙋"}
+                    {nearby.kind === "store" ? "🏪" : nearby.kind === "door" ? "🚪" : nearby.kind === "treasure" ? "🧰" : nearby.kind === "arcade" ? "🕹️" : "🙋"}
                   </span>
                   <span className="max-w-[6.5rem] truncate text-[10px] font-black md:max-w-none md:text-sm">{nearby.name}</span>
+                  {nearby.kind === "arcade" && (
+                    <button
+                      className="btn-plastic !px-2.5 !py-1 text-[10px] leading-none md:!px-3 md:!py-1.5 md:text-xs font-black bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md"
+                      onClick={() => {
+                        const gId = (nearby as any).minigameId || nearby.id;
+                        const normalized = gId.includes("pack") ? "pack_rip" : gId.includes("grading") ? "grading_masher" : "catch_card";
+                        setActiveMinigame(normalized);
+                      }}
+                    >
+                      🕹️ לשחק עכשיו!
+                    </button>
+                  )}
                   {nearby.kind === "store" && (
                     <>
                       <button className="btn-plastic !px-2 !py-1 text-[9px] leading-none md:!px-3 md:!py-1.5 md:text-xs" onClick={() => openInteraction("store", nearby.id)}>

@@ -338,6 +338,7 @@ export function GameViewport({
     const storesOnMap = objects.filter((o) => o.object_type === "store");
     const npcsOnMap = objects.filter((o) => o.object_type === "npc");
     const treasuresOnMap = objects.filter((o) => o.object_type === "treasure" && o.reference_id);
+    const arcadesOnMap = objects.filter((o) => o.object_type === "arcade" || o.object_type === "minigame");
 
 
     const FLOOR_STYLE_MAP: Record<string, { color: string; top: string }> = {
@@ -490,6 +491,19 @@ export function GameViewport({
             name: (d.metadata?.label as string) || "דלת",
             targetMapId: d.metadata?.target_map_id as string | undefined,
           };
+          break;
+        }
+      }
+      if (!near) for (const arc of arcadesOnMap) {
+        if (Math.abs(s.x - (arc.x + (arc.width || 120) / 2)) < 120 && Math.abs(s.y - arc.y) < 140) {
+          const gameId = (arc.reference_id as string) || "catch_card";
+          const gameTitle = (arc.metadata?.label as string) || (gameId.includes("pack") ? "קריעת בוסטר" : gameId.includes("grading") ? "צחצוח ל-PSA 10" : "תפוס את הקלף");
+          near = {
+            kind: "arcade" as any,
+            id: arc.id,
+            name: `🕹️ ${gameTitle}`,
+            minigameId: gameId,
+          } as any;
           break;
         }
       }
@@ -751,6 +765,76 @@ export function GameViewport({
         ctx.fillStyle = "#4b1d5f"; ctx.font = "bold 20px Fredoka, system-ui";
         ctx.textAlign = "center";
         ctx.fillText(sref?.name ?? "חנות", 0, -halfH - 8);
+        ctx.restore();
+      }
+      // Arcade Minigame Machines
+      for (const arc of arcadesOnMap) {
+        if (arc.x < s.camX - 200 || arc.x > s.camX + viewportWidth + 200) continue;
+        const gameId = (arc.reference_id as string) || "catch_card";
+        const gameTitle = (arc.metadata?.label as string) || (gameId.includes("pack") ? "קריעת בוסטר" : gameId.includes("grading") ? "צחצוח ל-PSA 10" : "תפוס את הקלף");
+        const w = arc.width || 100;
+        const h = arc.height || 140;
+
+        ctx.save();
+        ctx.translate(arc.x, arc.y);
+
+        // Cabinet Body
+        ctx.fillStyle = "#1e1b4b";
+        roundRect(ctx, 0, 0, w, h, 14);
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = gameId.includes("pack") ? "#10b981" : gameId.includes("grading") ? "#06b6d4" : "#f59e0b";
+        ctx.stroke();
+
+        // Marquee (Header)
+        ctx.fillStyle = gameId.includes("pack") ? "#065f46" : gameId.includes("grading") ? "#0e7490" : "#b45309";
+        roundRect(ctx, 8, 8, w - 16, 26, 8);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 11px Fredoka, system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("🕹️ ARCADE", w / 2, 25);
+
+        // Screen
+        ctx.fillStyle = "#020617";
+        roundRect(ctx, 12, 40, w - 24, h - 85, 8);
+        ctx.fill();
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Screen glow icon
+        ctx.font = "24px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(gameId.includes("pack") ? "✂️" : gameId.includes("grading") ? "🔍" : "🃏", w / 2, 78);
+
+        // Control Panel
+        ctx.fillStyle = "#334155";
+        roundRect(ctx, 8, h - 38, w - 16, 28, 6);
+        ctx.fill();
+        // Joystick & Buttons
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(w / 2 - 16, h - 24, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#eab308";
+        ctx.beginPath();
+        ctx.arc(w / 2 + 8, h - 26, 4, 0, Math.PI * 2);
+        ctx.arc(w / 2 + 20, h - 22, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Title banner above
+        ctx.fillStyle = "#0f172a";
+        roundRect(ctx, w / 2 - 60, -28, 120, 22, 6);
+        ctx.fill();
+        ctx.strokeStyle = ctx.strokeStyle = gameId.includes("pack") ? "#10b981" : gameId.includes("grading") ? "#06b6d4" : "#f59e0b";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = "#f8fafc";
+        ctx.font = "bold 11px Fredoka, system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(gameTitle, w / 2, -13);
+
         ctx.restore();
       }
       // NPCs (sprite-aware)
@@ -1126,6 +1210,7 @@ export function GameViewport({
       if (!hit || !o.reference_id) continue;
       if (o.object_type === "store") { onInteract("store", o.reference_id); return; }
       if (o.object_type === "treasure") { onInteract("treasure", o.reference_id); return; }
+      if (o.object_type === "arcade" || o.object_type === "minigame") { (onInteract as any)("arcade", o.id, { minigameId: o.reference_id }); return; }
     }
   };
 

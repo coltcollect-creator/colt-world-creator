@@ -28,6 +28,7 @@ import { AuditLogsPanel } from "@/components/owner/AuditLogsPanel";
 import { AlbumManagerPanel } from "@/components/owner/AlbumManagerPanel";
 import { MusicPlaylistPanel } from "@/components/owner/MusicPlaylistPanel";
 import { SpecializedNpcEditor } from "@/components/owner/SpecializedNpcEditor";
+import { MinigamesAdminPanel } from "@/components/owner/MinigamesAdminPanel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -37,7 +38,7 @@ export const Route = createFileRoute("/owner/")({ component: OwnerConsole });
 
 type Tab =
   | "dashboard" | "messages" | "broadcast" | "maps" | "stores" | "products" | "vendorproducts" | "categories" | "cosmetics" | "characters" | "roles" | "npcs"
-  | "wheels" | "mystery" | "auctions" | "liverips" | "treasures" | "clues"
+  | "wheels" | "mystery" | "auctions" | "liverips" | "treasures" | "clues" | "minigames"
   | "quests" | "album" | "titles" | "levels" | "players" | "users" | "orders" | "transactions" | "packages"
   | "moderation" | "music" | "audit" | "settings";
 
@@ -61,6 +62,7 @@ const TABS: { key: Tab; i18n: string; icon: string; fallback?: string }[] = [
   { key: "liverips", i18n: "owner.tab.liverips", icon: "📦", fallback: "Live Rip" },
   { key: "treasures", i18n: "owner.tab.treasures", icon: "🧰", fallback: "תיבות אוצר" },
   { key: "clues", i18n: "owner.tab.clues", icon: "🧩", fallback: "רמזים" },
+  { key: "minigames", i18n: "owner.tab.minigames", icon: "🕹️", fallback: "משחקי ארקייד" },
   { key: "quests", i18n: "owner.tab.quests", icon: "📜" },
   { key: "album", i18n: "owner.tab.album", icon: "🃏", fallback: "אלבום מדבקות דיגיטלי" },
   { key: "titles", i18n: "owner.tab.titles", icon: "🏆" },
@@ -329,7 +331,7 @@ const TAB_GROUPS: { label: string; icon: string; keys: Tab[] }[] = [
   { label: "סקירה", icon: "📊", keys: ["dashboard", "messages", "broadcast"] },
   { label: "עולם המשחק", icon: "🗺️", keys: ["maps", "music", "stores", "npcs", "characters", "roles", "cosmetics"] },
   { label: "חנות ומוצרים", icon: "📦", keys: ["products", "vendorproducts", "categories", "packages"] },
-  { label: "עמדות ומשחקים", icon: "🎡", keys: ["wheels", "mystery", "auctions", "liverips", "treasures", "clues"] },
+  { label: "עמדות ומשחקים", icon: "🎡", keys: ["wheels", "mystery", "auctions", "liverips", "treasures", "clues", "minigames"] },
   { label: "התקדמות שחקנים", icon: "📜", keys: ["quests", "titles", "levels"] },
   { label: "שחקנים והרשאות", icon: "👥", keys: ["players", "users", "moderation"] },
   { label: "מסחר ותנועות", icon: "🧾", keys: ["orders", "transactions"] },
@@ -488,6 +490,7 @@ function OwnerConsole() {
       {tab === "liverips" && <LiveRipsPanel />}
       {tab === "treasures" && <TreasuresPanel />}
       {tab === "clues" && <CluesPanel />}
+      {tab === "minigames" && <MinigamesAdminPanel />}
       {tab === "quests" && <ManagedTable schema={SCHEMAS.quests} title={t("owner.tab.quests")} />}
       {tab === "album" && <AlbumManagerPanel />}
       {tab === "titles" && <ManagedTable schema={SCHEMAS.titles} title={t("owner.tab.titles")} />}

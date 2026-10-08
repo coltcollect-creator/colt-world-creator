@@ -40,6 +40,7 @@ type Nearby =
   | { kind: "door"; id: string; name: string; targetMapId?: string }
   | { kind: "treasure"; id: string; name: string }
   | { kind: "screen"; id: string; name: string; text?: string; imageUrl?: string | null }
+  | { kind: "arcade"; id: string; name: string; minigameId?: string }
   | null;
 
 type Props = {
@@ -58,7 +59,7 @@ type Props = {
   floorColor?: string | null;
   floorTextureUrl?: string | null;
   touchInputRef?: MutableRefObject<{ x: number; y?: number; jump?: boolean; rotate?: number }>;
-  onInteract?: (kind: "store" | "npc" | "door" | "treasure" | "screen", id: string, extra?: { targetMapId?: string; title?: string; text?: string; imageUrl?: string | null }) => void;
+  onInteract?: (kind: "store" | "npc" | "door" | "treasure" | "screen" | "arcade", id: string, extra?: { targetMapId?: string; title?: string; text?: string; imageUrl?: string | null; minigameId?: string }) => void;
   onNearby?: (n: Nearby) => void;
   onInspectPlayer?: (player: OtherPlayer) => void;
 };
@@ -473,7 +474,7 @@ export function CoolEnvironmentViewport({
 
       // Render Map Objects
       type InteractableTarget = {
-        kind: "store" | "npc" | "door" | "treasure" | "screen";
+        kind: "store" | "npc" | "door" | "treasure" | "screen" | "arcade";
         id: string;
         name: string;
         x: number;
@@ -481,6 +482,7 @@ export function CoolEnvironmentViewport({
         targetMapId?: string;
         text?: string;
         imageUrl?: string | null;
+        minigameId?: string;
       };
       const interactables: InteractableTarget[] = [];
       const clickableObjects: THREE.Object3D[] = [];
@@ -1046,6 +1048,92 @@ export function CoolEnvironmentViewport({
           const rotW = ow * cosR + 25 * sinR;
           const rotD = ow * sinR + 25 * cosR;
           solidBoxes.push({ minX: ox - rotW / 2, maxX: ox + rotW / 2, minZ: oz - rotD / 2, maxZ: oz + rotD / 2 });
+        } else if (obj.object_type === "arcade" || obj.object_type === "minigame") {
+          const gameId = (obj.reference_id as string) || "catch_card";
+          const gameTitle = (meta.label as string) || (gameId.includes("pack") ? "קריעת בוסטר" : gameId.includes("grading") ? "צחצוח ל-PSA 10" : "תפוס את הקלף");
+          
+          interactables.push({
+            kind: "arcade",
+            id: obj.id,
+            name: `🕹️ ${gameTitle}`,
+            x: ox,
+            z: oz,
+            minigameId: gameId,
+          });
+
+          const arcadeGroup = new THREE.Group();
+          arcadeGroup.position.set(ox, 0, oz);
+          const rotY = (meta.rotation_y as number) ?? (meta.rotation_deg ? (meta.rotation_deg as number) * (Math.PI / 180) : 0);
+          arcadeGroup.rotation.y = rotY;
+
+          // Main Cabinet (Deep purple / Indigo futuristic cabinet)
+          const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1e1b4b, roughness: 0.4, metalness: 0.5 });
+          const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(85, 155, 75), bodyMat);
+          bodyMesh.position.y = 77.5;
+          bodyMesh.castShadow = true;
+          arcadeGroup.add(bodyMesh);
+
+          // Glowing Marquee
+          const headerMat = new THREE.MeshStandardMaterial({
+            color: gameId.includes("pack") ? 0x10b981 : gameId.includes("grading") ? 0x06b6d4 : 0xf59e0b,
+            emissive: gameId.includes("pack") ? 0x059669 : gameId.includes("grading") ? 0x0891b2 : 0xd97706,
+            emissiveIntensity: 0.7,
+            roughness: 0.2,
+          });
+          const marqueeMesh = new THREE.Mesh(new THREE.BoxGeometry(81, 28, 26), headerMat);
+          marqueeMesh.position.set(0, 142, 26);
+          arcadeGroup.add(marqueeMesh);
+
+          // Illuminated Screen
+          const screenMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+          const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(62, 52), screenMat);
+          screenMesh.position.set(0, 95, 38);
+          arcadeGroup.add(screenMesh);
+
+          // Control Panel
+          const cpMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5 });
+          const cpMesh = new THREE.Mesh(new THREE.BoxGeometry(79, 16, 32), cpMat);
+          cpMesh.position.set(0, 58, 36);
+          arcadeGroup.add(cpMesh);
+
+          // Joystick
+          const stickMat = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.6 });
+          const stickMesh = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 14, 8), stickMat);
+          stickMesh.position.set(-18, 70, 36);
+          arcadeGroup.add(stickMesh);
+
+          // Floating Title Badge
+          const bCanvas = document.createElement("canvas");
+          bCanvas.width = 384;
+          bCanvas.height = 80;
+          const bCtx = bCanvas.getContext("2d");
+          if (bCtx) {
+            bCtx.fillStyle = "rgba(15, 23, 42, 0.9)";
+            safeRoundRect(bCtx, 8, 8, 368, 64, 16);
+            bCtx.fill();
+            bCtx.strokeStyle = gameId.includes("pack") ? "#10b981" : gameId.includes("grading") ? "#06b6d4" : "#f59e0b";
+            bCtx.lineWidth = 3;
+            bCtx.stroke();
+            bCtx.fillStyle = "#ffffff";
+            bCtx.font = "bold 26px sans-serif";
+            bCtx.textAlign = "center";
+            bCtx.textBaseline = "middle";
+            bCtx.fillText(`🕹️ ${gameTitle}`, 192, 40);
+
+            const bTex = new THREE.CanvasTexture(bCanvas);
+            const bSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: bTex, transparent: true }));
+            bSprite.scale.set(140, 32, 1);
+            bSprite.position.set(0, 182, 0);
+            arcadeGroup.add(bSprite);
+          }
+
+          arcadeGroup.userData = {
+            interactable: { kind: "arcade", id: obj.id, name: gameTitle, minigameId: gameId },
+          };
+          clickableObjects.push(arcadeGroup);
+          scene.add(arcadeGroup);
+
+          solidBoxes.push({ minX: ox - 45, maxX: ox + 45, minZ: oz - 40, maxZ: oz + 40 });
         } else {
           // Decor / Furniture Element (supports all 33+ comprehensive presets across categories)
           const decorImageUrl = (meta.image_url as string) || (meta.sprite_url as string);
@@ -1244,18 +1332,20 @@ export function CoolEnvironmentViewport({
           }
           if (curr && curr.userData?.interactable) {
             const it = curr.userData.interactable as {
-              kind: "store" | "npc" | "door" | "treasure" | "screen";
+              kind: "store" | "npc" | "door" | "treasure" | "screen" | "arcade";
               id: string;
               name: string;
               targetMapId?: string;
               text?: string;
               imageUrl?: string | null;
+              minigameId?: string;
             };
             onInteractRef.current?.(it.kind, it.id, {
               targetMapId: it.targetMapId,
               title: it.name,
               text: it.text,
               imageUrl: it.imageUrl,
+              minigameId: it.minigameId,
             });
             return;
           }
@@ -1545,6 +1635,7 @@ export function CoolEnvironmentViewport({
               ...(closest.targetMapId ? { targetMapId: closest.targetMapId } : {}),
               ...(closest.text ? { text: closest.text } : {}),
               ...(closest.imageUrl ? { imageUrl: closest.imageUrl } : {}),
+              ...(closest.minigameId ? { minigameId: closest.minigameId } : {}),
             };
             activeNearbyRef.current = nb;
             setActiveNearby(nb);

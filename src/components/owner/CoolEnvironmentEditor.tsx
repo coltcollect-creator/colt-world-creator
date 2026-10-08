@@ -7,6 +7,7 @@ import { FLOOR_TYPES, makeFloorCanvas, type FloorType } from "@/lib/floor-textur
 import { Sparkles, Eye, Move, Plus, Trash2, RotateCw, RotateCcw, Monitor, ZoomIn, ZoomOut, Save, LayoutGrid, Maximize2, Palette, DoorClosed, Box, Hand, Navigation, Target, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, User, Layers, Lock, ShieldAlert, Settings } from "lucide-react";
 import { SpecializedNpcEditor } from "@/components/owner/SpecializedNpcEditor";
 import { ALL_DECOR_PRESETS, DECOR_CATEGORIES, type DecorCategory, type DecorPresetItem } from "@/lib/decor-catalog";
+import { SPECIALIZED_NPCS, ARCADE_MINIGAMES } from "@/lib/npcs-system";
 
 type ObjRow = {
   id: string;
@@ -24,7 +25,7 @@ type ObjRow = {
   layer: number;
 };
 
-type Tool = "select" | "pan" | "room" | "store" | "npc" | "door" | "decor" | "screen" | "treasure" | "spawn";
+type Tool = "select" | "pan" | "room" | "store" | "npc" | "arcade" | "door" | "decor" | "screen" | "treasure" | "spawn";
 
 const TOOLS: Array<{ key: Tool; label: string; icon: string; desc: string }> = [
   { key: "select", label: "בחירה וגרירה", icon: "🖐️", desc: "הזז ושנה גדלים" },
@@ -32,6 +33,7 @@ const TOOLS: Array<{ key: Tool; label: string; icon: string; desc: string }> = [
   { key: "room", label: "חדר / מתחם (Sims)", icon: "🏠", desc: "קירות נמוכים ורצפה מעוצבת" },
   { key: "store", label: "עמדת חנות / דוכן", icon: "🏪", desc: "הצב עמדת מסחר מפוארת" },
   { key: "npc", label: "דמות NPC", icon: "🙋", desc: "מדריך / דמות שיחה" },
+  { key: "arcade", label: "עמדת ארקייד", icon: "🕹️", desc: "עמדת מיני-משחק ביריד" },
   { key: "door", label: "שער מעבר מפה", icon: "🚪", desc: "שער מעבר למפה אחרת" },
   { key: "decor", label: "אלמנט עיצובי", icon: "✨", desc: "עצים, עמודים, ספות וצמחים" },
   { key: "screen", label: "מסך מולטימדיה", icon: "📺", desc: "מסך ענק להצגת תוכן" },
@@ -47,6 +49,7 @@ const DEFAULTS: Record<Tool, { width: number; depth: number; height: number }> =
   room: { width: 440, depth: 320, height: 75 },
   store: { width: 280, depth: 220, height: 260 },
   npc: { width: 80, depth: 80, height: 140 },
+  arcade: { width: 90, depth: 75, height: 160 },
   door: { width: 180, depth: 60, height: 250 },
   decor: { width: 120, depth: 120, height: 160 },
   screen: { width: 260, depth: 30, height: 160 },
@@ -98,6 +101,7 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickerId, setPickerId] = useState("");
   const [doorTarget, setDoorTarget] = useState("");
+  const [arcadeGameId, setArcadeGameId] = useState<string>("catch_card");
   const [decorCategory, setDecorCategory] = useState<string>("all");
   const [decorPresetId, setDecorPresetId] = useState<string>(ALL_DECOR_PRESETS[0].id);
   const [decorSprite, setDecorSprite] = useState<string | null>(null);
@@ -604,6 +608,22 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         ctx.font = "bold 11px sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(`🙋 ${npcName}`, topPos.x, topPos.y - 8);
+      } else if (obj.object_type === "arcade" || obj.object_type === "minigame") {
+        const gameId = (obj.reference_id as string) || "catch_card";
+        const mgDef = ARCADE_MINIGAMES.find((m) => m.reference_id === gameId);
+        const gameTitle = (meta.label as string) || mgDef?.name || "ארקייד";
+        ctx.fillStyle = "#1e1b4b";
+        ctx.fillRect(basePos.x - 22, basePos.y - 65, 44, 65);
+        ctx.strokeStyle = gameId.includes("pack") ? "#10b981" : gameId.includes("grading") ? "#06b6d4" : "#f59e0b";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(basePos.x - 22, basePos.y - 65, 44, 65);
+        // screen
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillRect(basePos.x - 16, basePos.y - 52, 32, 22);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 11px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(`🕹️ ${gameTitle}`, basePos.x, basePos.y - 74);
       } else if (obj.object_type === "treasure") {
         ctx.fillStyle = "#eab308";
         ctx.fillRect(basePos.x - 20, basePos.y - 35, 40, 30);
@@ -943,9 +963,11 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
       };
     } else if (tool === "npc") {
       if (!pickerId) {
-        toast.error("אנא בחר NPC מהרשימה לפני ההצבה");
+        toast.error("אנא בחר דמות מהרשימה לפני ההצבה");
         return;
       }
+      const specNpc = SPECIALIZED_NPCS.find((sn) => sn.id === pickerId);
+      const npcName = specNpc?.name || npcs.find((n) => n.id === pickerId)?.name || "NPC";
       payload = {
         ...base,
         object_type: "npc",
@@ -956,7 +978,22 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
         height: d.depth,
         depth: d.depth,
         interactive: true,
-        metadata: { height_3d: d.height },
+        metadata: { label: npcName, is_specialized: !!specNpc, role: specNpc?.role, height_3d: d.height },
+      };
+    } else if (tool === "arcade") {
+      const gId = arcadeGameId || "catch_card";
+      const mgDef = ARCADE_MINIGAMES.find((m) => m.reference_id === gId) || ARCADE_MINIGAMES[0];
+      payload = {
+        ...base,
+        object_type: "arcade",
+        reference_id: gId,
+        x: Math.round(worldX - d.width / 2),
+        y: Math.round(worldZ - d.depth / 2),
+        width: d.width,
+        height: d.depth,
+        depth: d.depth,
+        interactive: true,
+        metadata: { label: mgDef.name, minigame_id: gId, height_3d: d.height },
       };
     } else if (tool === "door") {
       if (!doorTarget) {
@@ -1310,13 +1347,45 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
               onChange={(e) => setPickerId(e.target.value)}
               className="w-full rounded-xl border border-border bg-input px-2.5 py-1.5 text-xs font-bold"
             >
-              <option value="">-- בחר דמות --</option>
-              {npcs.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.name}
+              <option value="">-- בחר דמות להצבה --</option>
+              <optgroup label="🌟 5 דמויות מיוחדות (NPCs מערכת)">
+                {SPECIALIZED_NPCS.map((sn) => (
+                  <option key={sn.id} value={sn.id}>
+                    {sn.emoji} {sn.name}
+                  </option>
+                ))}
+              </optgroup>
+              {npcs.length > 0 && (
+                <optgroup label="🙋 דמויות נוספות מהמאגר">
+                  {npcs.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            <p className="text-[10px] text-muted-foreground">בחרו דמות ולחצו על משטח המפה להצבתה</p>
+          </div>
+        )}
+
+        {tool === "arcade" && (
+          <div className="chrome-panel p-3 space-y-2">
+            <label className="block text-xs font-bold">🕹️ בחר מיני-משחק ארקייד</label>
+            <select
+              value={arcadeGameId}
+              onChange={(e) => setArcadeGameId(e.target.value)}
+              className="w-full rounded-xl border border-border bg-input px-2.5 py-1.5 text-xs font-bold"
+            >
+              {ARCADE_MINIGAMES.map((mg) => (
+                <option key={mg.reference_id} value={mg.reference_id}>
+                  {mg.icon} {mg.name}
                 </option>
               ))}
             </select>
+            <p className="text-[10px] text-muted-foreground">
+              הצב עמדת ארקייד תלת-ממדית. שחקנים שיתקרבו אליה יוכלו ללחוץ ולשחק!
+            </p>
           </div>
         )}
 

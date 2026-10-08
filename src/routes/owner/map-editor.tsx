@@ -10,11 +10,12 @@ import { CoolEnvironmentEditor } from "@/components/owner/CoolEnvironmentEditor"
 import { MAP_THEMES, renderAnimatedMapBackground, type MapBackgroundTheme } from "@/lib/map-backgrounds";
 import { ALL_DECOR_PRESETS, DECOR_CATEGORIES } from "@/lib/decor-catalog";
 import { drawDecor2DPreset } from "@/lib/decor-2d-drawer";
+import { SPECIALIZED_NPCS, ARCADE_MINIGAMES } from "@/lib/npcs-system";
 
 
 export const Route = createFileRoute("/owner/map-editor")({ component: MapEditor });
 
-type Tool = "select" | "platform" | "floor" | "store" | "npc" | "door" | "decor" | "screen" | "treasure" | "spawn";
+type Tool = "select" | "platform" | "floor" | "store" | "npc" | "door" | "decor" | "screen" | "treasure" | "spawn" | "arcade";
 
 /** Preset screen shapes; "pixels" lets the owner type exact dimensions. */
 const SCREEN_RATIOS: Record<string, { label: string; w: number; h: number }> = {
@@ -79,6 +80,7 @@ function MapEditor() {
   const [tool, setTool] = useState<Tool>("select");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickerId, setPickerId] = useState<string>("");
+  const [arcadeGameId, setArcadeGameId] = useState<string>("catch_card");
   const [doorTarget, setDoorTarget] = useState<string>("");
   const [floorStyle, setFloorStyle] = useState<string>("grass");
   const [decorCategory, setDecorCategory] = useState<string>("all");
@@ -316,6 +318,11 @@ function MapEditor() {
         fill = (o.metadata?.bg as string) || "#1e1b4b";
         label = "📺 " + ((o.metadata?.text as string) || "מסך");
       }
+      else if (o.object_type === "arcade" || o.object_type === "minigame") {
+        fill = "#1e1b4b";
+        const mgDef = ARCADE_MINIGAMES.find((m) => m.reference_id === o.reference_id);
+        label = `🕹️ ${mgDef?.name ?? (o.metadata?.label as string) ?? "ארקייד"}`;
+      }
       ctx.fillStyle = fill;
       ctx.fillRect(x, y, w, h);
       if (topStrip) { ctx.fillStyle = topStrip; ctx.fillRect(x, y, w, Math.max(3, h * 0.15)); }
@@ -403,8 +410,30 @@ function MapEditor() {
       const snapY = floorTop - STORE_H;
       payload = { ...base, x: snapX, y: snapY, object_type: "store", width: STORE_W, height: STORE_H, interactive: true, reference_id: pickerId };
     } else if (tool === "npc") {
-      if (!pickerId) { toast.error("Choose an NPC from the dropdown"); return; }
-      payload = { ...base, object_type: "npc", width: 48, height: 72, interactive: true, reference_id: pickerId };
+      if (!pickerId) { toast.error("בחרו דמות מהרשימה"); return; }
+      const specNpc = SPECIALIZED_NPCS.find((sn) => sn.id === pickerId);
+      const name = specNpc?.name ?? npcs.find((n) => n.id === pickerId)?.name ?? "דמות";
+      payload = {
+        ...base,
+        object_type: "npc",
+        width: 60,
+        height: 85,
+        interactive: true,
+        reference_id: pickerId,
+        metadata: { label: name, is_specialized: !!specNpc, role: specNpc?.role },
+      };
+    } else if (tool === "arcade") {
+      const gId = arcadeGameId || "catch_card";
+      const mgDef = ARCADE_MINIGAMES.find((m) => m.reference_id === gId) || ARCADE_MINIGAMES[0];
+      payload = {
+        ...base,
+        object_type: "arcade",
+        width: 100,
+        height: 140,
+        interactive: true,
+        reference_id: gId,
+        metadata: { label: mgDef.name, minigame_id: gId },
+      };
     } else if (tool === "door") {
       if (!doorTarget) { toast.error("בחרו מפת יעד עבור הדלת"); return; }
       payload = {
@@ -570,11 +599,11 @@ function MapEditor() {
           <div className="chrome-panel p-3">
             <div className="mb-2 text-xs font-bold">כלים</div>
             <div className="grid grid-cols-2 gap-1">
-              {(["select","platform","floor","store","npc","door","decor","screen","treasure","spawn"] as Tool[]).map((tk) => (
+              {(["select","platform","floor","store","npc","arcade","door","decor","screen","treasure","spawn"] as Tool[]).map((tk) => (
                 <button
                   key={tk}
                   onClick={() => { setTool(tk); setSelectedId(null); }}
-                  className={`chrome-panel px-2 py-1 text-xs ${tool === tk ? "ring-2 ring-primary bg-primary/10" : ""}`}
+                  className={`chrome-panel px-2 py-1 text-xs ${tool === tk ? "ring-2 ring-primary bg-primary/10 font-bold" : ""}`}
                 >
                   {toolLabel(tk)}
                 </button>
@@ -701,12 +730,39 @@ function MapEditor() {
               </div>
             )}
             {tool === "npc" && (
-              <div className="mt-2">
-                <label className="mb-1 block text-xs font-bold">דמות למיקום</label>
-                <select value={pickerId} onChange={(e) => setPickerId(e.target.value)} className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-sm">
-                  <option value="">— בחרו —</option>
-                  {npcs.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+              <div className="mt-2 space-y-1.5">
+                <label className="block text-xs font-bold">דמות למיקום</label>
+                <select value={pickerId} onChange={(e) => setPickerId(e.target.value)} className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs font-bold">
+                  <option value="">— בחרו דמות —</option>
+                  <optgroup label="🌟 5 דמויות מיוחדות (NPCs מערכת)">
+                    {SPECIALIZED_NPCS.map((sn) => (
+                      <option key={sn.id} value={sn.id}>{sn.emoji} {sn.name}</option>
+                    ))}
+                  </optgroup>
+                  {npcs.length > 0 && (
+                    <optgroup label="🙋 דמויות נוספות מהמאגר">
+                      {npcs.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+                    </optgroup>
+                  )}
                 </select>
+                <p className="text-[10px] text-muted-foreground">
+                  בחרו דמות ולחצו על המפה למיקומה
+                </p>
+              </div>
+            )}
+            {tool === "arcade" && (
+              <div className="mt-2 space-y-1.5">
+                <label className="block text-xs font-bold">🕹️ עמדת מיני-משחק ארקייד</label>
+                <select value={arcadeGameId} onChange={(e) => setArcadeGameId(e.target.value)} className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs font-bold">
+                  {ARCADE_MINIGAMES.map((mg) => (
+                    <option key={mg.reference_id} value={mg.reference_id}>
+                      {mg.icon} {mg.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-muted-foreground">
+                  הציבו עמדת ארקייד במפה. שחקנים שיתקרבו אליה יוכלו לשחק!
+                </p>
               </div>
             )}
             {tool === "door" && (
@@ -930,6 +986,7 @@ function toolLabel(t: Tool) {
     case "floor": return "🟫 רצפה מלאה";
     case "store": return "🏪 חנות";
     case "npc": return "🙋 דמות";
+    case "arcade": return "🕹️ ארקייד";
     case "door": return "🚪 דלת";
     case "decor": return "🌸 תפאורה";
     case "screen": return "📺 מסך";
