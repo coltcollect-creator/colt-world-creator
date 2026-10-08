@@ -52,6 +52,7 @@ export async function trackQuestAction(
     const matchingQuests = (quests ?? []).filter((q) => {
       const type = (q.quest_type || "").toLowerCase();
       const action = (q.action_type || "").toLowerCase();
+      const slug = (q.slug || "").toLowerCase();
       const name = (q.name || "").toLowerCase();
       const desc = (q.description || "").toLowerCase();
 
@@ -74,7 +75,7 @@ export async function trackQuestAction(
         return action === "find_clue" || name.includes("רמז") || name.includes("אוצר") || desc.includes("רמז");
       }
       if (actionKey === "login") {
-        return action === "login" || name.includes("התחברות") || desc.includes("התחברו");
+        return (action === "login" || slug.includes("login")) && (name.includes("התחברות") || desc.includes("התחברו") || slug.includes("login"));
       }
       if (actionKey === "purchase") {
         return action === "purchase" || name.includes("קנייה") || name.includes("רכישה") || desc.includes("קנו");
@@ -89,6 +90,12 @@ export async function trackQuestAction(
       const qId = q.id;
       const target = Number(q.target_amount) || 1;
 
+      // Check localStorage first for instant guard
+      const isAlreadySavedCompleted = typeof window !== "undefined" && Boolean(localStorage.getItem(`colt_quest_done_${user.id}_${qId}`));
+      if (isAlreadySavedCompleted && q.quest_type !== "daily") {
+        continue;
+      }
+
       // Fetch or initialize player progress
       const { data: existingList } = await supabase
         .from("player_quests")
@@ -99,7 +106,12 @@ export async function trackQuestAction(
 
       const existing = existingList?.[0];
       const prevProg = Number(existing?.progress) || 0;
-      if (existing?.claimed_at || existing?.completed_at) continue; // Already completed & claimed or done
+      if (existing?.claimed_at || existing?.completed_at || (prevProg >= target && q.quest_type !== "daily")) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem(`colt_quest_done_${user.id}_${qId}`, "1");
+        }
+        continue; // Already completed & claimed or done
+      }
 
       const isDaily = q.quest_type === "daily" || actionKey === "login" || (q.name || "").includes("יומי") || (q.name || "").includes("התחברות");
       const todayStr = new Date().toISOString().slice(0, 10);

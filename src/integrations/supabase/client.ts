@@ -264,6 +264,41 @@ function ensureLocalProfile(uid: string, email?: string, username?: string) {
   }
 }
 
+// Seed baseline maps, versions, and objects to Firestore
+let hasSeededBaselineMaps = false;
+async function seedBaselineMapsToFirestore() {
+  if (hasSeededBaselineMaps || typeof window === "undefined" || !db) return;
+  hasSeededBaselineMaps = true;
+  try {
+    const maps = gameDataStore.getTable("maps");
+    for (const m of maps) {
+      if (m?.id && !gameDataStore.isDeleted("maps", m.id)) {
+        await setDoc(doc(db, "maps", String(m.id)), cleanForFirestore(m), { merge: true }).catch(() => {});
+      }
+    }
+    const mapVersions = gameDataStore.getTable("map_versions");
+    for (const mv of mapVersions) {
+      if (mv?.id && !gameDataStore.isDeleted("map_versions", mv.id)) {
+        await setDoc(doc(db, "map_versions", String(mv.id)), cleanForFirestore(mv), { merge: true }).catch(() => {});
+      }
+    }
+    const mapObjects = gameDataStore.getTable("map_objects");
+    for (const mo of mapObjects) {
+      if (mo?.id && !gameDataStore.isDeleted("map_objects", mo.id)) {
+        await setDoc(doc(db, "map_objects", String(mo.id)), cleanForFirestore(mo), { merge: true }).catch(() => {});
+      }
+    }
+  } catch (e) {
+    console.warn("Baseline maps Firestore sync error:", e);
+  }
+}
+
+if (typeof window !== "undefined") {
+  setTimeout(() => {
+    void seedBaselineMapsToFirestore();
+  }, 500);
+}
+
 class QueryBuilder {
   private colName: string;
   private opType: "select" | "insert" | "upsert" | "update" | "delete" = "select";
@@ -548,19 +583,22 @@ class QueryBuilder {
           try {
             const snap = await getDocs(collection(db, this.colName));
             const remoteIds = new Set(snap.docs.map((d) => d.id));
-            // If any item was deleted remotely in Firestore, remove from local store
-            const currentLocal = gameDataStore.getTable(this.colName);
-            for (const loc of currentLocal) {
-              if (loc.id && !remoteIds.has(String(loc.id))) {
-                gameDataStore.deleteRow(this.colName, loc.id);
-              }
-            }
             if (!snap.empty) {
               for (const d of snap.docs) {
                 if (!gameDataStore.isDeleted(this.colName, d.id)) {
                   const row = { ...d.data(), id: d.id };
                   gameDataStore.upsertRow(this.colName, row);
                 }
+              }
+            }
+            // Auto-seed any valid local items missing in Firestore
+            const currentLocal = gameDataStore.getTable(this.colName);
+            for (const loc of currentLocal) {
+              if (loc.id && !remoteIds.has(String(loc.id)) && !gameDataStore.isDeleted(this.colName, loc.id)) {
+                try {
+                  const docRef = doc(db, this.colName, String(loc.id));
+                  void setDoc(docRef, cleanForFirestore(loc), { merge: true });
+                } catch {}
               }
             }
           } catch (e) {
@@ -912,12 +950,18 @@ export const supabase = {
           const existing = gameDataStore.getById("player_quests", pqId);
           const prev = Number(existing?.progress) || 0;
           const target = Number(q.target_amount) || 1;
+          if (existing?.claimed_at || existing?.completed_at || (prev >= target && q.quest_type !== "daily")) {
+            continue;
+          }
           const next = Math.min(target, prev + amount);
+          const isDone = next >= target;
           gameDataStore.upsertRow("player_quests", {
             id: pqId,
             user_id: activeUser.id,
             quest_id: qId,
             progress: next,
+            completed_at: isDone ? (existing?.completed_at || new Date().toISOString()) : (existing?.completed_at || null),
+            claimed_at: existing?.claimed_at || null,
             period_key: q.quest_type === "daily" ? new Date().toISOString().slice(0, 10) : "once",
             updated_at: new Date().toISOString(),
           });

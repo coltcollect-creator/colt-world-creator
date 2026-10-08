@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ImageUpload } from "@/components/owner/ImageUpload";
 import { FLOOR_TYPES, makeFloorCanvas, type FloorType } from "@/lib/floor-textures";
-import { Sparkles, Eye, Move, Plus, Trash2, RotateCw, RotateCcw, Monitor, ZoomIn, ZoomOut, Save, LayoutGrid, Maximize2, Palette, DoorClosed, Box, Hand, Navigation, Target, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, User, Layers } from "lucide-react";
+import { Sparkles, Eye, Move, Plus, Trash2, RotateCw, RotateCcw, Monitor, ZoomIn, ZoomOut, Save, LayoutGrid, Maximize2, Palette, DoorClosed, Box, Hand, Navigation, Target, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, User, Layers, Lock, ShieldAlert, Settings } from "lucide-react";
+import { SpecializedNpcEditor } from "@/components/owner/SpecializedNpcEditor";
 import { ALL_DECOR_PRESETS, DECOR_CATEGORIES, type DecorCategory, type DecorPresetItem } from "@/lib/decor-catalog";
 
 type ObjRow = {
@@ -107,6 +108,12 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
   const [floorType, setFloorType] = useState<FloorType>(((map.floor_type as FloorType) ?? "neon"));
   const [floorColor, setFloorColor] = useState<string | null>(map.floor_color ?? "#0f172a");
   const [themeAtmosphere, setThemeAtmosphere] = useState(map.background_theme ?? "cyber_arcade");
+
+  const [editingSpecializedNpc, setEditingSpecializedNpc] = useState<any | null>(null);
+
+  const { data: allCosmetics = [] } = useQueryClient().getQueryData(["all-cosmetics"])
+    ? { data: useQueryClient().getQueryData<any[]>(["all-cosmetics"]) || [] }
+    : { data: [] };
 
   // Map Dimensions State
   const [mapWidth, setMapWidth] = useState<number>(map.width || 2400);
@@ -1661,6 +1668,139 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
                       />
                     </div>
                   </div>
+
+                  {/* 💂 Room Locking / VIP Bouncer Guard Controls */}
+                  <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700/80 space-y-2 mt-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>נעילת חדר ושומר סף (Bouncer)</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selected.metadata?.is_locked)}
+                        onChange={async (e) => {
+                          const newMeta = { ...(selected.metadata || {}), is_locked: e.target.checked };
+                          selected.metadata = newMeta;
+                          await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                          qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                        }}
+                        className="w-4 h-4 accent-amber-500 cursor-pointer"
+                        title="הפעל נעילת חדר"
+                      />
+                    </div>
+
+                    {Boolean(selected.metadata?.is_locked) && (
+                      <div className="space-y-2 pt-1 border-t border-slate-800 text-[11px]">
+                        <div>
+                          <label className="text-[10px] text-muted-foreground block mb-0.5">סוג נעילה / תנאי כניסה</label>
+                          <select
+                            value={(selected.metadata?.lock_type as string) || "level"}
+                            onChange={async (e) => {
+                              const newMeta = { ...(selected.metadata || {}), lock_type: e.target.value };
+                              selected.metadata = newMeta;
+                              await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                              qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                            }}
+                            className="w-full rounded-lg border border-border bg-input px-2 py-1 text-xs font-bold"
+                          >
+                            <option value="level">⭐ רמת שחקן מינימלית</option>
+                            <option value="password">🔑 נעול בסיסמה סודית</option>
+                            <option value="album_card">🃏 בעלות על קלף באלבום הכנס</option>
+                            <option value="cosmetic">👕 לבישת קוסמטיקה מסוימת</option>
+                          </select>
+                        </div>
+
+                        {selected.metadata?.lock_type === "level" && (
+                          <div>
+                            <label className="text-[10px] text-muted-foreground block mb-0.5">רמה נדרשת ומעלה</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={(selected.metadata?.min_level as number) || 5}
+                              onChange={async (e) => {
+                                const newMeta = { ...(selected.metadata || {}), min_level: Number(e.target.value) };
+                                selected.metadata = newMeta;
+                                await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                                qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                              }}
+                              className="w-full rounded-lg border border-border bg-input px-2 py-1 text-xs font-bold"
+                            />
+                          </div>
+                        )}
+
+                        {selected.metadata?.lock_type === "password" && (
+                          <div>
+                            <label className="text-[10px] text-muted-foreground block mb-0.5">סיסמת כניסה סודית</label>
+                            <input
+                              type="text"
+                              value={(selected.metadata?.password as string) || ""}
+                              onChange={async (e) => {
+                                const newMeta = { ...(selected.metadata || {}), password: e.target.value };
+                                selected.metadata = newMeta;
+                                await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                                qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                              }}
+                              placeholder="הזן סיסמה..."
+                              className="w-full rounded-lg border border-border bg-input px-2 py-1 text-xs font-mono"
+                            />
+                          </div>
+                        )}
+
+                        {selected.metadata?.lock_type === "album_card" && (
+                          <div>
+                            <label className="text-[10px] text-muted-foreground block mb-0.5">מזהה קלף באלבום</label>
+                            <input
+                              type="text"
+                              value={(selected.metadata?.required_card_id as string) || "card-welcome"}
+                              onChange={async (e) => {
+                                const newMeta = { ...(selected.metadata || {}), required_card_id: e.target.value };
+                                selected.metadata = newMeta;
+                                await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                                qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                              }}
+                              placeholder="למשל: card-welcome / card-first-treasure"
+                              className="w-full rounded-lg border border-border bg-input px-2 py-1 text-xs font-mono"
+                            />
+                          </div>
+                        )}
+
+                        {selected.metadata?.lock_type === "cosmetic" && (
+                          <div>
+                            <label className="text-[10px] text-muted-foreground block mb-0.5">מזהה פריט קוסמטיקה נדרש</label>
+                            <input
+                              type="text"
+                              value={(selected.metadata?.required_cosmetic_id as string) || ""}
+                              onChange={async (e) => {
+                                const newMeta = { ...(selected.metadata || {}), required_cosmetic_id: e.target.value };
+                                selected.metadata = newMeta;
+                                await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                                qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                              }}
+                              placeholder="מזהה קוסמטיקה..."
+                              className="w-full rounded-lg border border-border bg-input px-2 py-1 text-xs font-mono"
+                            />
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="text-[10px] text-muted-foreground block mb-0.5">הודעת שומר הסף (למי שלא עומד בתנאי)</label>
+                          <input
+                            type="text"
+                            value={(selected.metadata?.lock_message as string) || ""}
+                            onChange={async (e) => {
+                              const newMeta = { ...(selected.metadata || {}), lock_message: e.target.value };
+                              selected.metadata = newMeta;
+                              await supabase.from("map_objects").update({ metadata: newMeta } as never).eq("id", selected.id);
+                              qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                            }}
+                            placeholder="עצור! הכניסה למורשים בלבד..."
+                            className="w-full rounded-lg border border-border bg-input px-2 py-1 text-xs"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2.5">
@@ -1684,6 +1824,47 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
                           </option>
                         ))}
                       </select>
+                    </div>
+                  )}
+
+                  {selected.object_type === "npc" && (
+                    <div className="space-y-2 p-2.5 rounded-xl bg-slate-900 border border-slate-700">
+                      <div>
+                        <label className="text-[10px] text-muted-foreground block mb-0.5 font-bold">🙋 שיוך לדמות NPC במערכת</label>
+                        <select
+                          value={selected.reference_id || ""}
+                          onChange={async (e) => {
+                            const val = e.target.value || null;
+                            selected.reference_id = val;
+                            await supabase.from("map_objects").update({ reference_id: val } as never).eq("id", selected.id);
+                            qc.invalidateQueries({ queryKey: ["editor-objects", versionId] });
+                          }}
+                          className="w-full rounded-lg border border-border bg-input px-2 py-1 text-xs font-bold"
+                        >
+                          <option value="">בחר דמות NPC...</option>
+                          {npcs.map((n) => (
+                            <option key={n.id} value={n.id}>
+                              {n.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Button to open Specialized NPC editor (Professor, Mystery Vendor, Pirate, Matchmaker) */}
+                      {selected.reference_id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const found = npcs.find((n) => n.id === selected.reference_id);
+                            if (found) setEditingSpecializedNpc(found);
+                            else toast.error("דמות לא נמצאה");
+                          }}
+                          className="w-full py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow"
+                        >
+                          <Settings className="w-3.5 h-3.5" />
+                          <span>ערוך הגדרות ייחודיות של הדמות ⚙️</span>
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -1983,6 +2164,16 @@ export function CoolEnvironmentEditor({ map, versionId, objects, stores, npcs, m
           </div>
         )}
       </aside>
+
+      {editingSpecializedNpc && (
+        <SpecializedNpcEditor
+          npc={editingSpecializedNpc}
+          onClose={() => {
+            setEditingSpecializedNpc(null);
+            qc.invalidateQueries({ queryKey: ["all-npcs"] });
+          }}
+        />
+      )}
     </div>
   );
 }

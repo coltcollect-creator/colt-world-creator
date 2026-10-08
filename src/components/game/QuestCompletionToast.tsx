@@ -33,7 +33,18 @@ export function QuestCompletionToast() {
       } catch {}
     };
 
+    const mountTime = Date.now();
+
     const notify = async (row: { id: string; quest_id: string; progress: number; completed_at: string | null; claimed_at: string | null }) => {
+      // Never renotify if already seen or completed in a previous session
+      if (
+        seenCompleted.current.has(row.id) ||
+        seenCompleted.current.has(row.quest_id) ||
+        localStorage.getItem(`colt_quest_done_${user.id}_${row.quest_id}`)
+      ) {
+        return;
+      }
+
       const { data: q } = await supabase
         .from("quests")
         .select("name, credit_reward, xp_reward, target_amount, icon_url, cosmetic_reward, title_reward, metadata")
@@ -46,11 +57,12 @@ export function QuestCompletionToast() {
       const hasCard = Boolean(q.icon_url || q.cosmetic_reward || (q.metadata as any)?.has_card || (q.metadata as any)?.card_image_url);
 
       const isRecentCompletion = row.completed_at
-        ? Date.now() - new Date(row.completed_at).getTime() < 15000
+        ? Date.now() - new Date(row.completed_at).getTime() < 8000 && (new Date(row.completed_at).getTime() >= mountTime - 2000)
         : false;
 
-      if (row.completed_at && !row.claimed_at && !seenCompleted.current.has(row.id)) {
+      if (row.completed_at && !row.claimed_at) {
         seenCompleted.current.add(row.id);
+        seenCompleted.current.add(row.quest_id);
         persistSeen();
 
         if (isRecentCompletion) {

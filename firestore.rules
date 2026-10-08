@@ -1,6 +1,7 @@
 rules_version = '2';
 // COLT Market World - Firestore Security Rules
-// Release Timestamp: 2026-10-04 13:11 UTC
+// Release Version: 2026.10.06 - Grand 2.5D Expo Update
+// Updated: 2026-10-06 20:06 UTC
 service cloud.firestore {
   match /databases/{database}/documents {
 

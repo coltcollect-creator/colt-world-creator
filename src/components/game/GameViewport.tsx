@@ -251,15 +251,42 @@ export function GameViewport({
       }
 
       const spawn = objects.find((o) => o.object_type === "spawn");
-      s.x = initialX ?? spawn?.x ?? 100;
-      s.y = initialY ?? spawn?.y ?? 100;
+      const targetX = initialX ?? spawn?.x ?? 120;
+
+      // Calculate ground floor / platform level so character always spawns at the bottom on the floor
+      const platforms = objects.filter((o) => o.collision && (o.object_type === "platform" || o.object_type === "wall"));
+      let defaultGroundY = height - PLAYER_H;
+
+      // Check if there is a platform below the spawn position
+      const groundPlatform = platforms
+        .filter((p) => targetX + PLAYER_W * 0.75 > p.x && targetX + PLAYER_W * 0.25 < p.x + p.width && p.y >= height * 0.35)
+        .sort((a, b) => b.y - a.y)[0];
+
+      if (groundPlatform) {
+        defaultGroundY = groundPlatform.y - PLAYER_H;
+      } else {
+        const lowestPlatform = [...platforms]
+          .filter((p) => p.y >= height * 0.4)
+          .sort((a, b) => b.y - a.y)[0];
+        if (lowestPlatform) {
+          defaultGroundY = lowestPlatform.y - PLAYER_H;
+        }
+      }
+
+      s.x = targetX;
+      // If initialY or spawn.y was mid-air (< height * 0.35), snap cleanly to ground floor
+      const validCustomY = (initialY !== null && initialY >= height * 0.35)
+        ? initialY
+        : (spawn?.y && spawn.y >= height * 0.35 ? spawn.y : null);
+
+      s.y = validCustomY ?? defaultGroundY;
       s.lastSavedX = s.x;
       s.lastSavedY = s.y;
       s.vx = 0;
       s.vy = 0;
       s.camX = 0;
       s.camY = 0;
-      s.onGround = false;
+      s.onGround = true;
       s.jumpConsumed = false;
       nearbyRef.current = null;
       onNearby?.(null);

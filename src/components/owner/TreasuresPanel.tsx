@@ -375,6 +375,7 @@ type ClueRow = {
   name: string;
   step_order: number;
   body: string | null;
+  sub_clue?: string | null;
   image_url: string | null;
   price_credits: number;
   available_in_wheel: boolean;
@@ -478,7 +479,7 @@ function ClueEditor({
 }) {
   const [form, setForm] = useState<ClueRow>(() => row ?? {
     id: "", box_id: boxes[0]?.id ?? null, name: "רמז 1", step_order: 1,
-    body: "", image_url: null, price_credits: 0, available_in_wheel: false,
+    body: "", sub_clue: "", image_url: null, price_credits: 0, available_in_wheel: false,
     store_id: null, active: true,
   });
   const [saving, setSaving] = useState(false);
@@ -490,6 +491,7 @@ function ClueEditor({
       name: form.name,
       step_order: Number(form.step_order) || 1,
       body: form.body,
+      sub_clue: form.sub_clue || null,
       image_url: form.image_url,
       price_credits: Number(form.price_credits) || 0,
       available_in_wheel: form.available_in_wheel,
@@ -528,7 +530,10 @@ function ClueEditor({
             <input type="number" value={form.price_credits} onChange={(e) => setForm((f) => ({ ...f, price_credits: Number(e.target.value) }))} className={input} />
           </label>
           <label className="text-xs md:col-span-2"><span className="font-semibold">מלל הרמז</span>
-            <textarea value={form.body ?? ""} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))} rows={3} className={input} placeholder="לדוגמה: הרמז הבא מחכה ליד…" />
+            <textarea value={form.body ?? ""} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))} rows={2} className={input} placeholder="לדוגמה: הרמז הבא מחכה ליד…" />
+          </label>
+          <label className="text-xs md:col-span-2"><span className="font-semibold text-emerald-400">🏴‍☠️ רמז לרמז (עזרת הפיראט למי שמתקשה)</span>
+            <textarea value={form.sub_clue ?? ""} onChange={(e) => setForm((f) => ({ ...f, sub_clue: e.target.value }))} rows={2} className={input} placeholder="עזרה נוספת שהפיראט יספק לשחקנים שפתחו רמז זה..." />
           </label>
           <div className="md:col-span-2">
             <div className="mb-1 text-xs font-semibold">תמונת רמז</div>

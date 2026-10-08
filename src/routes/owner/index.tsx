@@ -27,6 +27,7 @@ import { addPlayerXp, calculateLevel } from "@/lib/progression";
 import { AuditLogsPanel } from "@/components/owner/AuditLogsPanel";
 import { AlbumManagerPanel } from "@/components/owner/AlbumManagerPanel";
 import { MusicPlaylistPanel } from "@/components/owner/MusicPlaylistPanel";
+import { SpecializedNpcEditor } from "@/components/owner/SpecializedNpcEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -1009,8 +1010,85 @@ function formatCell(v: unknown) {
 
 function NpcsPanel() {
   const { t } = useI18n();
+  const [specializedNpc, setSpecializedNpc] = useState<any | null>(null);
+
+  const { data: npcsList = [] } = useQuery({
+    queryKey: ["own", "npcs-specialized-list"],
+    queryFn: async () => (await supabase.from("npcs").select("*")).data ?? [],
+  });
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* 🌟 5 Specialized NPCs Quick Launchers */}
+      <div className="chrome-panel p-4 space-y-3">
+        <div className="flex items-center justify-between border-b border-border pb-2">
+          <div>
+            <h3 className="text-base font-bold text-primary">🎭 5 דמויות ה-NPC המיוחדות (סופר אדמין)</h3>
+            <p className="text-xs text-muted-foreground">
+              עריכת שאלות הפרופסור, מוצרי הסוחר המסתורי, רמז לרמז של הפיראט, שומר הסף (Bouncer) והשדכן לקבוצות רכישה.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              const p = npcsList.find((n) => n.id?.includes("prof") || n.slug?.includes("prof")) || { id: "npc-professor", name: "פרופסור אוק (חידה יומית)" };
+              setSpecializedNpc(p);
+            }}
+            className="p-3 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-right space-y-1 transition-all"
+          >
+            <div className="flex items-center justify-between font-bold text-xs text-indigo-300">
+              <span>🔬 1. הפרופסור</span>
+              <span className="text-[10px] bg-indigo-500/20 px-2 py-0.5 rounded-full">חידה יומית</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">ערוך שאלות אמריקאיות, תשובות נכונות ופרסים יומיים</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const m = npcsList.find((n) => n.id?.includes("mystery") || n.slug?.includes("mystery")) || { id: "npc-mystery-vendor", name: "הסוחר המסתורי" };
+              setSpecializedNpc(m);
+            }}
+            className="p-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-right space-y-1 transition-all"
+          >
+            <div className="flex items-center justify-between font-bold text-xs text-amber-300">
+              <span>🕵️ 2. הסוחר המסתורי</span>
+              <span className="text-[10px] bg-amber-500/20 px-2 py-0.5 rounded-full">סוחר נודד</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">בחר אילו מוצרים ייחודיים הסוחר מציע למי שפוגש אותו</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const g = npcsList.find((n) => n.id?.includes("match") || n.slug?.includes("match")) || { id: "npc-matchmaker", name: "השדכן לרכישות קבוצתיות" };
+              setSpecializedNpc(g);
+            }}
+            className="p-3 rounded-2xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-right space-y-1 transition-all"
+          >
+            <div className="flex items-center justify-between font-bold text-xs text-purple-300">
+              <span>📢 3. השדכן (Waitlist)</span>
+              <span className="text-[10px] bg-purple-500/20 px-2 py-0.5 rounded-full">קבוצות רכישה</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">קריאות כרוז, מוצרים וצפייה ברשימת הנרשמים והטלפונים</p>
+          </button>
+
+          <a
+            href="/owner/map-editor"
+            className="p-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-right space-y-1 transition-all block"
+          >
+            <div className="flex items-center justify-between font-bold text-xs text-rose-300">
+              <span>💂 4. שומר השער (Bouncer)</span>
+              <span className="text-[10px] bg-rose-500/20 px-2 py-0.5 rounded-full">נעילת חדרים</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">הגדר חדרים נעולים (לפי רמה, סיסמה, קלף או קוסמטיקה) בעורך המפות</p>
+          </a>
+        </div>
+      </div>
+
       <ManagedTable
         schema={{
           table: "npc_appearances",
@@ -1054,6 +1132,13 @@ function NpcsPanel() {
         }}
         title="NPC messages"
       />
+
+      {specializedNpc && (
+        <SpecializedNpcEditor
+          npc={specializedNpc}
+          onClose={() => setSpecializedNpc(null)}
+        />
+      )}
     </div>
   );
 }

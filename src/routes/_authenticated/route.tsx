@@ -87,6 +87,19 @@ function AuthedLayout() {
     navigate({ to: "/play" });
   };
 
+  const handleSwitchToExpoMap = () => {
+    try {
+      localStorage.setItem("colt_last_map_id", "colt-grand-expo-2.5d");
+    } catch {}
+    window.dispatchEvent(new CustomEvent("colt-map-updated"));
+    setMenuOpen(false);
+    if (loc.pathname === "/play") {
+      window.location.search = "?mapId=colt-grand-expo-2.5d";
+    } else {
+      navigate({ to: "/play", search: { mapId: "colt-grand-expo-2.5d" } });
+    }
+  };
+
   useEffect(() => {
     if (loading || !user || !profile) return;
     const hasCharacter = Boolean(
@@ -128,6 +141,15 @@ function AuthedLayout() {
           >
             <span>🏰</span>
             <span>מפה ראשית</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleSwitchToExpoMap}
+            className="hidden sm:inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/40 px-2.5 py-1 text-xs font-bold text-purple-700 dark:text-purple-300 shadow-sm hover:from-purple-500/30 hover:to-pink-500/30 active:scale-95 transition-all"
+            title="מעבר להיכל האקספו 2.5D"
+          >
+            <span>🎪</span>
+            <span>היכל האקספו 2.5D</span>
           </button>
         </div>
         <nav data-tour="nav" className="hidden gap-1 lg:flex">
@@ -229,6 +251,19 @@ function AuthedLayout() {
                   <span>חזרה למפה הראשית</span>
                 </span>
                 <span className="text-xs opacity-70">חזור ↵</span>
+              </button>
+
+              {/* Fast Teleport to 2.5D Expo Hall in Mobile Menu */}
+              <button
+                type="button"
+                onClick={handleSwitchToExpoMap}
+                className="w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-bold bg-gradient-to-r from-purple-500/15 to-pink-500/15 text-purple-700 dark:text-purple-300 hover:from-purple-500/25 hover:to-pink-500/25 active:scale-[0.98] transition-all"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="text-lg">🎪</span>
+                  <span>היכל האקספו 2.5D</span>
+                </span>
+                <span className="text-xs opacity-70">כניסה ↵</span>
               </button>
 
               {NAV.map((n) => (

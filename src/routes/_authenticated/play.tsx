@@ -24,7 +24,16 @@ import { syncWooStock } from "@/lib/woo.functions";
 import { useTourAction } from "@/lib/tour";
 import { QuestProgressToast } from "@/components/game/QuestProgressToast";
 import { trackQuestAction } from "@/lib/quest-events";
-import { Monitor, X } from "lucide-react";
+import { Monitor, X, Gamepad2 } from "lucide-react";
+import { ProfessorQuizModal } from "@/components/game/npcs/ProfessorQuizModal";
+import { MysteryVendorModal } from "@/components/game/npcs/MysteryVendorModal";
+import { PirateCluesModal } from "@/components/game/npcs/PirateCluesModal";
+import { BouncerCheckModal } from "@/components/game/npcs/BouncerCheckModal";
+import { MatchmakerModal } from "@/components/game/npcs/MatchmakerModal";
+import { CatchCardGameModal } from "@/components/game/minigames/CatchCardGameModal";
+import { PackRipPrecisionModal } from "@/components/game/minigames/PackRipPrecisionModal";
+import { GradingMasherModal } from "@/components/game/minigames/GradingMasherModal";
+import type { RoomLockRule } from "@/lib/npcs-system";
 
 
 
@@ -73,6 +82,20 @@ function PlayPage() {
     text?: string;
     imageUrl?: string | null;
   } | null>(null);
+
+  // Specialized NPC states
+  const [activeProfessorNpc, setActiveProfessorNpc] = useState<any | null>(null);
+  const [activeMysteryNpc, setActiveMysteryNpc] = useState<any | null>(null);
+  const [activePirateNpc, setActivePirateNpc] = useState<any | null>(null);
+  const [activeMatchmakerNpc, setActiveMatchmakerNpc] = useState<any | null>(null);
+  const [bouncerCheck, setBouncerCheck] = useState<{
+    rule: RoomLockRule;
+    roomName: string;
+    targetMapId?: string;
+  } | null>(null);
+
+  // Minigames states
+  const [activeMinigame, setActiveMinigame] = useState<"catch_card" | "pack_rip" | "grading_masher" | null>(null);
   const [activeMapId, setActiveMapId] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
       const fromUrl = new URLSearchParams(window.location.search).get("mapId");
@@ -256,7 +279,6 @@ function PlayPage() {
     },
   });
 
-
   useEffect(() => {
     if (!user) return;
     if (sessionStorage.getItem(`colt_login_tracked_${user.id}`)) return;
@@ -282,6 +304,19 @@ function PlayPage() {
     }
     if (kind === "door") {
       if (extra?.targetMapId) {
+        // Check if destination or current door has room lock rules
+        const doorObj = mapBundle?.objects?.find((o) => o.id === id);
+        const lockRule = (doorObj?.metadata?.lock_rule || doorObj?.metadata) as RoomLockRule | undefined;
+
+        if (lockRule && lockRule.is_locked && lockRule.lock_type !== "none") {
+          setBouncerCheck({
+            rule: lockRule,
+            roomName: (doorObj?.metadata?.label as string) || "אזור סגור",
+            targetMapId: extra.targetMapId,
+          });
+          return;
+        }
+
         try {
           localStorage.setItem("colt_last_map_id", extra.targetMapId);
         } catch {}
@@ -298,7 +333,36 @@ function PlayPage() {
     if (kind === "npc") {
       trackQuestAction("visit_npc", 1, { npcId: id });
       supabase.rpc("progress_quest", { _action_type: "visit_npc", _amount: 1 }).then(() => {});
-      await startConversationWith("npc", id, npcs.find((n) => n.id === id)?.name ?? "NPC");
+
+      const foundNpc = npcs.find((n) => n.id === id);
+      const npcSlug = foundNpc?.slug?.toLowerCase() || "";
+      const npcId = foundNpc?.id?.toLowerCase() || "";
+
+      // 1. The Professor (Daily Quiz)
+      if (npcSlug.includes("prof") || npcId.includes("prof")) {
+        setActiveProfessorNpc(foundNpc || { id, name: "פרופסור אוק" });
+        return;
+      }
+
+      // 2. Mystery Vendor (Roaming products)
+      if (npcSlug.includes("mystery") || npcId.includes("mystery")) {
+        setActiveMysteryNpc(foundNpc || { id, name: "הסוחר המסתורי" });
+        return;
+      }
+
+      // 3. The Pirate (Daily Treasure Hunter - Clue to Clue)
+      if (npcSlug.includes("pirate") || npcId.includes("pirate")) {
+        setActivePirateNpc(foundNpc || { id, name: "הפיראט" });
+        return;
+      }
+
+      // 4. The Matchmaker (Group Buy & Waitlist)
+      if (npcSlug.includes("match") || npcId.includes("match")) {
+        setActiveMatchmakerNpc(foundNpc || { id, name: "השדכן" });
+        return;
+      }
+
+      await startConversationWith("npc", id, foundNpc?.name ?? "NPC");
       return;
     }
     if (kind === "store") {
@@ -375,6 +439,42 @@ function PlayPage() {
   return (
     <div className="mx-auto max-w-[1600px] p-2 md:p-4">
       <QuestProgressToast />
+
+      {/* 🕹️ Arcade Minigames Quick Access Bar */}
+      <div className="mb-2.5 flex items-center justify-between gap-2 rounded-2xl bg-slate-900/90 border border-slate-700/80 px-3 py-1.5 shadow-md backdrop-blur-md">
+        <div className="flex items-center gap-2 text-xs font-black text-amber-400">
+          <Gamepad2 className="w-4 h-4 text-amber-400 animate-pulse" />
+          <span className="hidden sm:inline">🕹️ מיני-משחקי ארקייד ביריד:</span>
+          <span className="sm:hidden">🕹️ משחקים:</span>
+        </div>
+        <div className="flex items-center gap-1.5 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setActiveMinigame("catch_card")}
+            className="flex items-center gap-1 rounded-xl bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 text-[11px] font-bold text-amber-300 hover:bg-amber-500/25 active:scale-95 transition-all shrink-0"
+          >
+            <span>🃏</span>
+            <span>תפוס את הקלף</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveMinigame("pack_rip")}
+            className="flex items-center gap-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/25 active:scale-95 transition-all shrink-0"
+          >
+            <span>✂️</span>
+            <span>קריעת בוסטר</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveMinigame("grading_masher")}
+            className="flex items-center gap-1 rounded-xl bg-cyan-500/15 border border-cyan-500/30 px-2.5 py-1 text-[11px] font-bold text-cyan-300 hover:bg-cyan-500/25 active:scale-95 transition-all shrink-0"
+          >
+            <span>🔍</span>
+            <span>צחצוח ל-PSA 10</span>
+          </button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_260px]">
         <div>
           <div data-tour="game-viewport" className="relative">
@@ -625,6 +725,75 @@ function PlayPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 🔬 1. The Professor Daily Quiz Modal */}
+      {activeProfessorNpc && (
+        <ProfessorQuizModal
+          npc={activeProfessorNpc}
+          onClose={() => setActiveProfessorNpc(null)}
+        />
+      )}
+
+      {/* 🕵️ 2. Mystery Vendor Roaming Store Modal */}
+      {activeMysteryNpc && (
+        <MysteryVendorModal
+          npc={activeMysteryNpc}
+          onClose={() => setActiveMysteryNpc(null)}
+        />
+      )}
+
+      {/* 🏴‍☠️ 3. Pirate Clue-to-Clue Help Modal */}
+      {activePirateNpc && (
+        <PirateCluesModal
+          npc={activePirateNpc}
+          onClose={() => setActivePirateNpc(null)}
+        />
+      )}
+
+      {/* 💂 4. VIP Guard / Bouncer Check Modal */}
+      {bouncerCheck && (
+        <BouncerCheckModal
+          rule={bouncerCheck.rule}
+          roomName={bouncerCheck.roomName}
+          userLevel={profile?.level || 1}
+          userCosmetics={profile?.equipped_cosmetics || []}
+          userAlbumCards={[]}
+          onSuccess={() => {
+            if (bouncerCheck.targetMapId) {
+              try {
+                localStorage.setItem("colt_last_map_id", bouncerCheck.targetMapId);
+              } catch {}
+              setActiveMapId(bouncerCheck.targetMapId);
+              toast.success("שומר השער אפשר את כניסתך! ברוך הבא 🚪");
+            }
+            setBouncerCheck(null);
+          }}
+          onClose={() => setBouncerCheck(null)}
+        />
+      )}
+
+      {/* 📢 5. Group Buy & Waitlist Matchmaker Modal */}
+      {activeMatchmakerNpc && (
+        <MatchmakerModal
+          npc={activeMatchmakerNpc}
+          onClose={() => setActiveMatchmakerNpc(null)}
+        />
+      )}
+
+      {/* 🕹️ Arcade Minigame 1: Catch The Card */}
+      {activeMinigame === "catch_card" && (
+        <CatchCardGameModal onClose={() => setActiveMinigame(null)} />
+      )}
+
+      {/* 🕹️ Arcade Minigame 2: Pack Rip Precision */}
+      {activeMinigame === "pack_rip" && (
+        <PackRipPrecisionModal onClose={() => setActiveMinigame(null)} />
+      )}
+
+      {/* 🕹️ Arcade Minigame 3: Grading Button Masher */}
+      {activeMinigame === "grading_masher" && (
+        <GradingMasherModal onClose={() => setActiveMinigame(null)} />
       )}
 
     </div>
@@ -972,47 +1141,9 @@ function MobileJoystick({
 
   return (
     <div className="pointer-events-none absolute inset-0 md:hidden select-none">
-      {/* 🎮 Left Side: Movement Virtual Joystick (Fixed to Physical Screen Left) */}
-      <div className="pointer-events-auto absolute bottom-3 left-3 flex flex-col items-center gap-1">
-        <div
-          ref={moveRef}
-          className="relative grid h-20 w-20 place-items-center rounded-full border-2 border-white/80 bg-black/60 shadow-2xl backdrop-blur-md touch-none"
-          onTouchStart={(e) => {
-            setMoveActive(true);
-            updateMove(e.touches[0].clientX, e.touches[0].clientY);
-          }}
-          onTouchMove={(e) => {
-            updateMove(e.touches[0].clientX, e.touches[0].clientY);
-          }}
-          onTouchEnd={stopMove}
-          onTouchCancel={stopMove}
-          onPointerDown={(e) => {
-            setMoveActive(true);
-            updateMove(e.clientX, e.clientY);
-            (e.target as HTMLElement).setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            if (moveActive) updateMove(e.clientX, e.clientY);
-          }}
-          onPointerUp={stopMove}
-        >
-          {/* Directional ticks */}
-          <div className="pointer-events-none absolute inset-1 rounded-full border border-white/10" />
-          <div
-            className="pointer-events-none h-8 w-8 rounded-full bg-primary shadow-lg ring-2 ring-white/80 transition-transform duration-75 flex items-center justify-center text-[10px] text-white font-bold"
-            style={{ transform: `translate(${moveKnob.x}px, ${moveKnob.y}px)` }}
-          >
-            🕹️
-          </div>
-        </div>
-        <span className="text-[9px] font-bold text-white/80 bg-black/60 px-1.5 py-0.5 rounded-full backdrop-blur-sm">
-          תנועה
-        </span>
-      </div>
-
-      {/* 🎥 Right Side: Camera Rotation Joystick (2.5D/3D) OR Jump Button (2D) (Fixed to Physical Screen Right) */}
+      {/* 🎥 Left Side: Camera Rotation Joystick (2.5D/3D) OR Jump Button (2D) (Fixed to Physical Screen Left) */}
       {is3DOrCool ? (
-        <div className="pointer-events-auto absolute bottom-3 right-3 flex flex-col items-center gap-1">
+        <div className="pointer-events-auto absolute bottom-3 left-3 flex flex-col items-center gap-1">
           {/* Camera Horizontal Orbit Rotation Joystick */}
           <div
             ref={camRef}
@@ -1052,7 +1183,7 @@ function MobileJoystick({
         </div>
       ) : (
         /* 2D Jump button */
-        <div className="pointer-events-auto absolute bottom-4 right-3 flex flex-col items-center gap-1">
+        <div className="pointer-events-auto absolute bottom-4 left-3 flex flex-col items-center gap-1">
           <button
             className="grid h-14 w-14 place-items-center rounded-full border-2 border-white bg-primary text-xl text-primary-foreground shadow-2xl active:scale-95"
             onTouchStart={() => { touchInputRef.current.jump = true; }}
@@ -1067,6 +1198,44 @@ function MobileJoystick({
           </span>
         </div>
       )}
+
+      {/* 🎮 Right Side: Movement Virtual Joystick (Fixed to Physical Screen Right) */}
+      <div className="pointer-events-auto absolute bottom-3 right-3 flex flex-col items-center gap-1">
+        <div
+          ref={moveRef}
+          className="relative grid h-20 w-20 place-items-center rounded-full border-2 border-white/80 bg-black/60 shadow-2xl backdrop-blur-md touch-none"
+          onTouchStart={(e) => {
+            setMoveActive(true);
+            updateMove(e.touches[0].clientX, e.touches[0].clientY);
+          }}
+          onTouchMove={(e) => {
+            updateMove(e.touches[0].clientX, e.touches[0].clientY);
+          }}
+          onTouchEnd={stopMove}
+          onTouchCancel={stopMove}
+          onPointerDown={(e) => {
+            setMoveActive(true);
+            updateMove(e.clientX, e.clientY);
+            (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (moveActive) updateMove(e.clientX, e.clientY);
+          }}
+          onPointerUp={stopMove}
+        >
+          {/* Directional ticks */}
+          <div className="pointer-events-none absolute inset-1 rounded-full border border-white/10" />
+          <div
+            className="pointer-events-none h-8 w-8 rounded-full bg-primary shadow-lg ring-2 ring-white/80 transition-transform duration-75 flex items-center justify-center text-[10px] text-white font-bold"
+            style={{ transform: `translate(${moveKnob.x}px, ${moveKnob.y}px)` }}
+          >
+            🕹️
+          </div>
+        </div>
+        <span className="text-[9px] font-bold text-white/80 bg-black/60 px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+          תנועה
+        </span>
+      </div>
     </div>
   );
 }

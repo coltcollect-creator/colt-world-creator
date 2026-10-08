@@ -77,6 +77,16 @@ function loadPersistedOverrides() {
       }
     }
 
+    // Ensure essential baseline maps and version IDs are never mistakenly blocked
+    if (deletedIdsMap["maps"]) {
+      deletedIdsMap["maps"].delete("colt-grand-expo-2.5d");
+      deletedIdsMap["maps"].delete("f5bb3160-7415-4f62-b72c-f04d1fcbd1a9");
+      deletedIdsMap["maps"].delete("54cd9d02-e7a0-48a7-b4fb-8356c6bb8ef7");
+    }
+    if (deletedIdsMap["map_versions"]) {
+      deletedIdsMap["map_versions"].delete("ver-colt-grand-expo-v1");
+    }
+
     // Purge any baseline items that were previously marked deleted
     for (const [table, idsSet] of Object.entries(deletedIdsMap)) {
       if (store[table]) {
