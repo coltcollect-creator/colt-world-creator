@@ -74,6 +74,9 @@ export function BackgroundMusicPlayer() {
     audio.muted = isMuted;
   }, [effectiveVolume, isMuted]);
 
+  // Check if current device is mobile/touch
+  const isMobile = typeof window !== "undefined" ? (window.innerWidth < 768 || navigator.maxTouchPoints > 0) : false;
+
   // Handle track changing
   useEffect(() => {
     const audio = audioRef.current;
@@ -89,7 +92,9 @@ export function BackgroundMusicPlayer() {
         audio.load();
       }
 
-      if (!isMuted && profileMusicEnabled) {
+      // Autoplay only on desktop when not muted, enabled, and user has not explicitly paused
+      const shouldAutoPlay = !isMuted && profileMusicEnabled && !prefs.userPaused && !isMobile;
+      if (shouldAutoPlay) {
         audio.play()
           .then(() => setIsPlaying(true))
           .catch(() => {
@@ -102,12 +107,16 @@ export function BackgroundMusicPlayer() {
     return () => {
       cancelled = true;
     };
-  }, [currentTrack, isMuted, profileMusicEnabled]);
+  }, [currentTrack, isMuted, profileMusicEnabled, prefs.userPaused, isMobile]);
 
-  // Robust Autoplay / Gesture unlock handler for Mobile & Desktop
+  // Robust Autoplay unlock handler (ONLY for initial user gesture, strictly respecting user pause and never resuming on movement)
   useEffect(() => {
-    const tryPlayAudio = () => {
-      setHasInteracted(true);
+    if (prefs.userPaused || isMobile) return;
+
+    const unlockAudio = () => {
+      const freshPrefs = getStoredAudioPreferences();
+      if (freshPrefs.userPaused) return;
+
       const audio = audioRef.current;
       if (audio && !isMuted && profileMusicEnabled && audio.paused && audio.src) {
         audio.play()
@@ -116,17 +125,14 @@ export function BackgroundMusicPlayer() {
       }
     };
 
-    const gestureEvents = ["touchstart", "touchend", "pointerdown", "click", "keydown", "colt-unlock-audio"];
-    gestureEvents.forEach((evt) => {
-      window.addEventListener(evt, tryPlayAudio, { passive: true });
-    });
+    window.addEventListener("pointerdown", unlockAudio, { once: true, passive: true });
+    window.addEventListener("click", unlockAudio, { once: true, passive: true });
 
     return () => {
-      gestureEvents.forEach((evt) => {
-        window.removeEventListener(evt, tryPlayAudio);
-      });
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("click", unlockAudio);
     };
-  }, [isMuted, profileMusicEnabled]);
+  }, [isMuted, profileMusicEnabled, prefs.userPaused, isMobile]);
 
   // Handle track ended -> play next, or loop back to index 0
   const handleEnded = () => {
@@ -151,6 +157,7 @@ export function BackgroundMusicPlayer() {
     setCurrentIndex(nextIdx);
     setIsPlaying(true);
     setHasInteracted(true);
+    saveStoredAudioPreferences({ userPaused: false });
     toast.info(`🎶 מנגן: ${tracks[nextIdx]?.title || "שיר הבא"}`);
   };
 
@@ -163,15 +170,17 @@ export function BackgroundMusicPlayer() {
     if (isPlaying) {
       audio.pause();
       setIsPlaying(false);
+      saveStoredAudioPreferences({ userPaused: true });
     } else {
+      saveStoredAudioPreferences({ userPaused: false, muted: false });
       if (isMuted) {
-        saveStoredAudioPreferences({ muted: false });
+        audio.muted = false;
       }
       audio.play()
         .then(() => setIsPlaying(true))
         .catch((err) => {
           console.warn("Could not play audio:", err);
-          toast.error("לא ניתן לנגן כעת, נא ללחוץ על המסך");
+          toast.error("לא ניתן לנגן כעת, נא ללחוץ שוב");
         });
     }
   };
@@ -180,7 +189,7 @@ export function BackgroundMusicPlayer() {
     e?.stopPropagation();
     const newMuted = !prefs.muted;
     saveStoredAudioPreferences({ muted: newMuted });
-    if (!newMuted && !isPlaying) {
+    if (!newMuted && !isPlaying && !prefs.userPaused && !isMobile) {
       setIsPlaying(true);
       audioRef.current?.play().catch(() => {});
     }
@@ -192,7 +201,7 @@ export function BackgroundMusicPlayer() {
       audioRef.current.volume = newVol;
       audioRef.current.muted = false;
     }
-    if (!isPlaying) {
+    if (!isPlaying && !prefs.userPaused) {
       setIsPlaying(true);
       audioRef.current?.play().catch(() => {});
     }

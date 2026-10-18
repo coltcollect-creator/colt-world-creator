@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { ImageUpload } from "@/components/owner/ImageUpload";
 import { downloadTemplate, parseExcelFile } from "@/lib/excel";
+import { VendorCatalogSync } from "@/components/vendor/VendorCatalogSync";
 
 export const Route = createFileRoute("/_authenticated/vendor")({
   head: () => ({
@@ -210,8 +211,9 @@ const EXCEL_FIELDS = [
 
 function VendorDashboard({ vendor }: { vendor: Vendor }) {
   const qc = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"products" | "orders">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "orders" | "catalog_sync">("products");
   const [showForm, setShowForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<VendorProduct | null>(null);
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["vendor-products", vendor.id],
@@ -268,14 +270,22 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
   };
 
   const remove = async (p: VendorProduct) => {
-    if (p.vendor_status !== "pending") {
-      toast.error("אפשר למחוק רק פריט שממתין לאישור. לפריט שאושר פנו אלינו בהודעות.");
-      return;
-    }
-    if (!confirm(`למחוק את "${p.name}"?`)) return;
+    if (!confirm(`האם אתם בטוחים שברצונכם למחוק את המוצר "${p.name}"?`)) return;
     const { error } = await supabase.from("products").delete().eq("id", p.id);
     if (error) { toast.error(error.message); return; }
-    toast.success("נמחק");
+    toast.success("המוצר נמחק בהצלחה");
+    refresh();
+  };
+
+  const quickUpdateStock = async (p: VendorProduct, delta: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newStock = Math.max(0, (p.stock ?? 0) + delta);
+    const { error } = await supabase.from("products").update({ stock: newStock }).eq("id", p.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(`מלאי עבור "${p.name}" עודכן ל-${newStock}`);
     refresh();
   };
 
@@ -312,7 +322,7 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
         </div>
 
         {/* Tab switcher */}
-        <div className="flex items-center gap-1.5 rounded-xl bg-muted/60 p-1 border border-border">
+        <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-muted/60 p-1 border border-border">
           <button
             onClick={() => setActiveTab("products")}
             className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
@@ -333,6 +343,14 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
                 {counts.ordersPendingShip}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => setActiveTab("catalog_sync")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === "catalog_sync" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            🌐 סנכרון קטלוג ווקומרס / XML
           </button>
         </div>
 
@@ -453,14 +471,44 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
                       )}
                     </div>
 
-                    {isPending && (
+                    {/* Actions: quick stock, edit, delete */}
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1 border border-border rounded-xl bg-card px-1.5 py-1 text-xs shadow-sm" title="עדכון מהיר של המלאי">
+                        <button
+                          type="button"
+                          onClick={(e) => void quickUpdateStock(p, -1, e)}
+                          className="h-6 w-6 rounded-lg bg-muted hover:bg-muted/80 text-foreground font-black grid place-items-center active:scale-95 transition-all"
+                          title="הפחת 1 מהמלאי"
+                        >
+                          -
+                        </button>
+                        <span className="px-2 font-mono font-bold text-xs" title="מלאי קיים">{p.stock ?? 0}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => void quickUpdateStock(p, 1, e)}
+                          className="h-6 w-6 rounded-lg bg-muted hover:bg-muted/80 text-foreground font-black grid place-items-center active:scale-95 transition-all"
+                          title="הוסף 1 למלאי"
+                        >
+                          +
+                        </button>
+                      </div>
+
                       <button
-                        onClick={() => void remove(p)}
-                        className="rounded-lg bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-bold px-2.5 py-1 transition-all"
+                        type="button"
+                        onClick={() => setEditingProduct(p)}
+                        className="rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold px-3 py-1.5 transition-all flex items-center gap-1 shadow-sm active:scale-95"
                       >
-                        מחיקה
+                        <span>✏️</span> עריכה
                       </button>
-                    )}
+
+                      <button
+                        type="button"
+                        onClick={() => void remove(p)}
+                        className="rounded-xl bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-bold px-3 py-1.5 transition-all flex items-center gap-1 shadow-sm active:scale-95"
+                      >
+                        <span>🗑️</span> מחיקה
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -546,6 +594,28 @@ function VendorDashboard({ vendor }: { vendor: Vendor }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* -------------------- VENDOR CATALOG SYNC -------------------- */}
+      {activeTab === "catalog_sync" && (
+        <VendorCatalogSync
+          vendorId={vendor.id}
+          existingNames={existingNames}
+          onDone={refresh}
+        />
+      )}
+
+      {/* -------------------- EDIT PRODUCT MODAL -------------------- */}
+      {editingProduct && (
+        <EditProductModal
+          product={editingProduct}
+          categories={categories.map((c) => c.name)}
+          onClose={() => setEditingProduct(null)}
+          onSaved={() => {
+            setEditingProduct(null);
+            refresh();
+          }}
+        />
       )}
     </div>
   );
@@ -741,3 +811,169 @@ function ExcelImport({ vendorId, existingNames, onDone }: { vendorId: string; ex
     </label>
   );
 }
+
+/* ------------------------------ edit product modal ------------------------------ */
+
+function EditProductModal({
+  product,
+  categories,
+  onClose,
+  onSaved,
+}: {
+  product: VendorProduct;
+  categories: string[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(product.name || "");
+  const [image, setImage] = useState<string | null>(product.image_url || null);
+  const [category, setCategory] = useState(product.category || "");
+  const [description, setDescription] = useState(product.description || "");
+  const [cardSet, setCardSet] = useState(product.set_name || "");
+  const [tags, setTags] = useState((product.tags || []).join(", "));
+  const [price, setPrice] = useState<number>(product.credit_price || 100);
+  const [stock, setStock] = useState<number>(product.stock ?? 1);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!name.trim()) { toast.error("חובה למלא שם מוצר"); return; }
+    if (!price || price <= 0) { toast.error("מחיר חייב להיות גדול מ-0"); return; }
+
+    setSaving(true);
+    const { error } = await supabase
+      .from("products")
+      .update({
+        name: name.trim(),
+        image_url: image,
+        category: category.trim() || null,
+        description: description.trim() || null,
+        set_name: cardSet.trim() || null,
+        tags: tags.split(",").map((s) => s.trim()).filter(Boolean),
+        credit_price: Math.round(price),
+        stock: Math.max(0, Math.round(stock)),
+      })
+      .eq("id", product.id);
+
+    setSaving(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("פרטי המוצר עודכנו בהצלחה ✨");
+    onSaved();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
+      <div
+        dir="rtl"
+        className="chrome-panel w-full max-w-xl max-h-[90vh] overflow-y-auto p-5 space-y-4 rounded-2xl shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border pb-3">
+          <div className="flex items-center gap-2 font-bold text-base">
+            <span>✏️</span>
+            <span>עריכת מוצר: {product.name}</span>
+          </div>
+          <button type="button" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full bg-muted">
+            ✕
+          </button>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 text-xs">
+          <label className="font-bold sm:col-span-2">
+            שם המוצר *
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-sm font-normal"
+            />
+          </label>
+
+          <label className="font-bold">
+            מחיר בג'מים 💎 *
+            <input
+              type="number"
+              min={1}
+              value={price}
+              onChange={(e) => setPrice(Number(e.target.value))}
+              className="mt-1 w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-sm font-bold text-primary"
+            />
+          </label>
+
+          <label className="font-bold">
+            כמות במלאי
+            <input
+              type="number"
+              min={0}
+              value={stock}
+              onChange={(e) => setStock(Number(e.target.value))}
+              className="mt-1 w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-sm font-normal"
+            />
+          </label>
+
+          <label className="font-bold">
+            קטגוריה
+            <input
+              list="edit-vendor-cats"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="פוקימון / וואן פיס / …"
+              className="mt-1 w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-sm font-normal"
+            />
+            <datalist id="edit-vendor-cats">
+              {categories.map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </label>
+
+          <label className="font-bold">
+            חלק מסט (אופציונלי)
+            <input
+              value={cardSet}
+              onChange={(e) => setCardSet(e.target.value)}
+              className="mt-1 w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-sm font-normal"
+            />
+          </label>
+
+          <label className="font-bold sm:col-span-2">
+            תגיות (מופרדות בפסיקים)
+            <input
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              className="mt-1 w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-sm font-normal"
+            />
+          </label>
+
+          <label className="font-bold sm:col-span-2">
+            תיאור המוצר
+            <textarea
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="mt-1 w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-sm font-normal"
+            />
+          </label>
+
+          <div className="sm:col-span-2">
+            <ImageUpload value={image} onChange={setImage} folder="vendor-products" label="תמונת המוצר" />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+          <button type="button" onClick={onClose} className="rounded-xl px-4 py-2 text-xs font-bold bg-muted hover:bg-muted/80">
+            ביטול
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => void save()}
+            className="btn-plastic px-5 py-2 text-xs font-bold shadow disabled:opacity-50"
+          >
+            {saving ? "שומר שינויים…" : "💾 שמירת שינויים"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

@@ -1611,7 +1611,9 @@
       "layer": 1,
       "collision": false,
       "interactive": false,
-      "metadata": { "label": "נקודת כניסה ראשית" },
+      "metadata": {
+        "label": "נקודת כניסה ראשית"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -1629,7 +1631,10 @@
       "layer": 2,
       "collision": false,
       "interactive": true,
-      "metadata": { "label": "חזרה למפה הראשית", "target_map_id": "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9" },
+      "metadata": {
+        "label": "חזרה למפה הראשית",
+        "target_map_id": "f5bb3160-7415-4f62-b72c-f04d1fcbd1a9"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -1647,7 +1652,10 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "reception_luxury", "label": "דלפק קבלה ומודיעין" },
+      "metadata": {
+        "preset": "reception_luxury",
+        "label": "דלפק קבלה ומודיעין"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 100
     },
@@ -1665,7 +1673,9 @@
       "layer": 2,
       "collision": false,
       "interactive": true,
-      "metadata": { "label": "עדי - מודיעין הכנס" },
+      "metadata": {
+        "label": "עדי - מודיעין הכנס"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -1683,7 +1693,11 @@
       "layer": 2,
       "collision": true,
       "interactive": true,
-      "metadata": { "text": "ברוכים הבאים ל-COLT EXPO 2026\nיריד הקלפים והאספנות הרשמי!\nסיירו במתחם, אספו קלפים וסחרו בדוכנים", "bg": "#0f172a", "fg": "#38bdf8" },
+      "metadata": {
+        "text": "ברוכים הבאים ל-COLT EXPO 2026\nיריד הקלפים והאספנות הרשמי!\nסיירו במתחם, אספו קלפים וסחרו בדוכנים",
+        "bg": "#0f172a",
+        "fg": "#38bdf8"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -1701,7 +1715,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "tree_palm_tropical" },
+      "metadata": {
+        "preset": "tree_palm_tropical"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -1719,7 +1735,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "tree_palm_tropical" },
+      "metadata": {
+        "preset": "tree_palm_tropical"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -1737,7 +1755,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "plant_monstera" },
+      "metadata": {
+        "preset": "plant_monstera"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 70
     },
@@ -1755,7 +1775,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "plant_monstera" },
+      "metadata": {
+        "preset": "plant_monstera"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 70
     },
@@ -1773,7 +1795,9 @@
       "layer": 1,
       "collision": false,
       "interactive": false,
-      "metadata": { "preset": "rug_luxury_oriental" },
+      "metadata": {
+        "preset": "rug_luxury_oriental"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 340
     },
@@ -1791,7 +1815,12 @@
       "layer": 1,
       "collision": true,
       "interactive": false,
-      "metadata": { "wall_height": 85, "wall_color": "#6366f1", "floor_color": "#1e1b4b", "room_name": "מתחם VIP לאספנים" },
+      "metadata": {
+        "wall_height": 85,
+        "wall_color": "#6366f1",
+        "floor_color": "#1e1b4b",
+        "room_name": "מתחם VIP לאספנים"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 700
     },
@@ -1809,7 +1838,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "sofa_luxury_velvet" },
+      "metadata": {
+        "preset": "sofa_luxury_velvet"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -1827,7 +1858,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "sofa_modern_white" },
+      "metadata": {
+        "preset": "sofa_modern_white"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -1845,7 +1878,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "table_large_conference" },
+      "metadata": {
+        "preset": "table_large_conference"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 100
     },
@@ -1863,7 +1898,9 @@
       "layer": 1,
       "collision": false,
       "interactive": false,
-      "metadata": { "preset": "rug_geometric_modern" },
+      "metadata": {
+        "preset": "rug_geometric_modern"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 260
     },
@@ -1881,7 +1918,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "vending_snack_deluxe" },
+      "metadata": {
+        "preset": "vending_snack_deluxe"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 60
     },
@@ -1899,7 +1938,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "mirror_luxury_gold" },
+      "metadata": {
+        "preset": "mirror_luxury_gold"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 30
     },
@@ -1917,7 +1958,9 @@
       "layer": 2,
       "collision": false,
       "interactive": true,
-      "metadata": { "label": "כספת VIP נדירה" },
+      "metadata": {
+        "label": "כספת VIP נדירה"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 60
     },
@@ -1935,7 +1978,9 @@
       "layer": 2,
       "collision": false,
       "interactive": true,
-      "metadata": { "label": "רונן - שגריר אספני זהב" },
+      "metadata": {
+        "label": "רונן - שגריר אספני זהב"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -1953,7 +1998,12 @@
       "layer": 1,
       "collision": true,
       "interactive": false,
-      "metadata": { "wall_height": 85, "wall_color": "#ec4899", "floor_color": "#09090b", "room_name": "ארקייד טורנירים והגרלות" },
+      "metadata": {
+        "wall_height": 85,
+        "wall_color": "#ec4899",
+        "floor_color": "#09090b",
+        "room_name": "ארקייד טורנירים והגרלות"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 700
     },
@@ -1971,7 +2021,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "sofa_cyber_lounge" },
+      "metadata": {
+        "preset": "sofa_cyber_lounge"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -1989,7 +2041,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "table_large_cyber" },
+      "metadata": {
+        "preset": "table_large_cyber"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 100
     },
@@ -2007,7 +2061,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "vending_cyber_energy" },
+      "metadata": {
+        "preset": "vending_cyber_energy"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 60
     },
@@ -2025,7 +2081,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "vending_soda_retro" },
+      "metadata": {
+        "preset": "vending_soda_retro"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 60
     },
@@ -2043,7 +2101,9 @@
       "layer": 1,
       "collision": false,
       "interactive": false,
-      "metadata": { "preset": "rug_cyber_hologram" },
+      "metadata": {
+        "preset": "rug_cyber_hologram"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 260
     },
@@ -2061,7 +2121,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "tree_cyber_neon" },
+      "metadata": {
+        "preset": "tree_cyber_neon"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -2079,7 +2141,11 @@
       "layer": 2,
       "collision": true,
       "interactive": true,
-      "metadata": { "text": "לוח טורנירים שבועי\nמקום 1: 1,000 ג'מים\nמקום 2: חבילת בוסטרים", "bg": "#831843", "fg": "#fbcfe8" },
+      "metadata": {
+        "text": "לוח טורנירים שבועי\nמקום 1: 1,000 ג'מים\nמקום 2: חבילת בוסטרים",
+        "bg": "#831843",
+        "fg": "#fbcfe8"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -2097,7 +2163,9 @@
       "layer": 2,
       "collision": false,
       "interactive": true,
-      "metadata": { "label": "תיבת מזל ארקייד" },
+      "metadata": {
+        "label": "תיבת מזל ארקייד"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 60
     },
@@ -2115,7 +2183,9 @@
       "layer": 2,
       "collision": false,
       "interactive": true,
-      "metadata": { "label": "מיה - מנהלת טורנירים" },
+      "metadata": {
+        "label": "מיה - מנהלת טורנירים"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -2133,7 +2203,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "tree_golden_oak" },
+      "metadata": {
+        "preset": "tree_golden_oak"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 90
     },
@@ -2151,7 +2223,9 @@
       "layer": 2,
       "collision": true,
       "interactive": true,
-      "metadata": { "label": "מרכז פוקימון" },
+      "metadata": {
+        "label": "מרכז פוקימון"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 160
     },
@@ -2169,7 +2243,9 @@
       "layer": 2,
       "collision": true,
       "interactive": true,
-      "metadata": { "label": "עולם וואן פיס" },
+      "metadata": {
+        "label": "עולם וואן פיס"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 160
     },
@@ -2187,7 +2263,9 @@
       "layer": 2,
       "collision": true,
       "interactive": true,
-      "metadata": { "label": "דרגון בול ארנה" },
+      "metadata": {
+        "label": "דרגון בול ארנה"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 160
     },
@@ -2205,7 +2283,9 @@
       "layer": 2,
       "collision": true,
       "interactive": true,
-      "metadata": { "label": "מתחם הסינגלים והגריידים" },
+      "metadata": {
+        "label": "מתחם הסינגלים והגריידים"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 160
     },
@@ -2223,7 +2303,9 @@
       "layer": 2,
       "collision": false,
       "interactive": true,
-      "metadata": { "label": "אלון - מומחה סחר והחלפות" },
+      "metadata": {
+        "label": "אלון - מומחה סחר והחלפות"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -2241,7 +2323,11 @@
       "layer": 2,
       "collision": true,
       "interactive": true,
-      "metadata": { "text": "לוח הצעות סחר פעילות\nקנייה / מכירה / החלפה\nפנו לנציגים בדוכנים!", "bg": "#065f46", "fg": "#a7f3d0" },
+      "metadata": {
+        "text": "לוח הצעות סחר פעילות\nקנייה / מכירה / החלפה\nפנו לנציגים בדוכנים!",
+        "bg": "#065f46",
+        "fg": "#a7f3d0"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -2259,7 +2345,11 @@
       "layer": 2,
       "collision": true,
       "interactive": true,
-      "metadata": { "text": "⭐ במה מרכזית - COLT EXPO 2026 ⭐\nטקס פתיחה והגרלת קלף הגביע הנדיר!\nהישארו מעודכנים לשידור החי", "bg": "#172554", "fg": "#60a5fa" },
+      "metadata": {
+        "text": "⭐ במה מרכזית - COLT EXPO 2026 ⭐\nטקס פתיחה והגרלת קלף הגביע הנדיר!\nהישארו מעודכנים לשידור החי",
+        "bg": "#172554",
+        "fg": "#60a5fa"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -2277,7 +2367,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "reception_cyber" },
+      "metadata": {
+        "preset": "reception_cyber"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 60
     },
@@ -2295,7 +2387,9 @@
       "layer": 2,
       "collision": false,
       "interactive": true,
-      "metadata": { "label": "מנחה הבמה הראשית" },
+      "metadata": {
+        "label": "מנחה הבמה הראשית"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -2313,7 +2407,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "tree_cherry_sakura" },
+      "metadata": {
+        "preset": "tree_cherry_sakura"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -2331,7 +2427,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "tree_cherry_sakura" },
+      "metadata": {
+        "preset": "tree_cherry_sakura"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 80
     },
@@ -2349,7 +2447,9 @@
       "layer": 2,
       "collision": false,
       "interactive": true,
-      "metadata": { "label": "תיבת פרסי הבמה המרכזית" },
+      "metadata": {
+        "label": "תיבת פרסי הבמה המרכזית"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 60
     },
@@ -2367,7 +2467,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "armchair_egg_chair" },
+      "metadata": {
+        "preset": "armchair_egg_chair"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 60
     },
@@ -2385,7 +2487,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "armchair_modern_grey" },
+      "metadata": {
+        "preset": "armchair_modern_grey"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 60
     },
@@ -2403,7 +2507,9 @@
       "layer": 2,
       "collision": true,
       "interactive": false,
-      "metadata": { "preset": "armchair_cyber_pod" },
+      "metadata": {
+        "preset": "armchair_cyber_pod"
+      },
       "created_at": "2026-10-05T12:00:00.000000+00:00",
       "depth": 60
     },
@@ -17332,10 +17438,10 @@
       "name": "נינג'ה",
       "description": "Original COLT convention explorer",
       "role_id": null,
-      "image_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790241168098-3udpgm.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQxMTY4MDk4LTN1ZHBnbS5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQxMTY5LCJleHAiOjIxMDU2MDExNjl9.lv3RA5Sgn3_Wd9JxBq7HfswE5JoswDURrdT2k7hmpZ8",
-      "sprite_right_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790241340487-ckaoy2.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQxMzQwNDg3LWNrYW95Mi5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQxMzQzLCJleHAiOjIxMDU2MDEzNDN9.Ov9g7wUpgkYhllmodNbfjJg2rDXio_Pziy-jYQoo4-Y",
-      "sprite_left_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790241435740-hts0q1.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQxNDM1NzQwLWh0czBxMS5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQxNDM3LCJleHAiOjIxMDU2MDE0Mzd9.2ZL7Dy6nhf_9PPPuHAmv1h0tmVQUPdIF6IjuHj-97HI",
-      "sprite_jump_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790242663226-5090yo.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQyNjYzMjI2LTUwOTB5by5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQyNjY1LCJleHAiOjIxMDU2MDI2NjV9.TY32KEy7zMcpthgk0ytc7fopW3AxALpXkJU9Q-IxoJo",
+      "image_url": "/storage_cache/characters/image_url_adventurer-orion_muigjx1q.png",
+      "sprite_right_url": "/storage_cache/characters/sprite_right_url_d14fed03-b2c5-4205-b2ff-a151345151ee_muigjxbf.png",
+      "sprite_left_url": "/storage_cache/characters/sprite_left_url_adventurer-orion_muigjx3c.png",
+      "sprite_jump_url": "/storage_cache/characters/sprite_right_url_adventurer-orion_muigjx5l.png",
       "is_starter": true,
       "is_free": true,
       "credit_price": 0,
@@ -17350,10 +17456,10 @@
       "name": "מאיה",
       "description": "Original COLT convention explorer",
       "role_id": "d992291f-f6b8-415c-961f-66fa8fd6a11d",
-      "image_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790245088277-toz4do.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQ1MDg4Mjc3LXRvejRkby5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQ1MDkwLCJleHAiOjIxMDU2MDUwOTB9.xXb2xwPjREqW3tFVA5p4wnsR1S7FSPaoRxo66mPlZZA",
-      "sprite_right_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790247232415-8xr2rk.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQ3MjMyNDE1LTh4cjJyay5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQ3MjM0LCJleHAiOjIxMDU2MDcyMzR9.z_8m50YU1-JJSrdthdAoDJ7Bdlz6LBidY5VzenaFFik",
-      "sprite_left_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790247260248-s75sru.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQ3MjYwMjQ4LXM3NXNydS5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQ3MjYyLCJleHAiOjIxMDU2MDcyNjJ9.6uGwdn5oV6oX2w01MclxJdnxlCEIGK17UDFi55SMgZ8",
-      "sprite_jump_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790247494137-s0fbcz.jpg?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQ3NDk0MTM3LXMwZmJjei5qcGciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQ3NDk2LCJleHAiOjIxMDU2MDc0OTZ9.tXZHpkPLihRFfxrI7byryOEUP6GGZg58Zrgc32CGuM4",
+      "image_url": "/storage_cache/characters/image_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxm0.png",
+      "sprite_right_url": "/storage_cache/characters/sprite_right_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxf0.png",
+      "sprite_left_url": "/storage_cache/characters/sprite_left_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxje.png",
+      "sprite_jump_url": "/storage_cache/characters/sprite_jump_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxh9.jpg",
       "is_starter": true,
       "is_free": true,
       "credit_price": 0,
@@ -17368,10 +17474,10 @@
       "name": "קוסם",
       "description": "חוקר COLT בסיסי המותאם לכל שכבות הקוסמטיקה",
       "role_id": null,
-      "image_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790243842980-2zbn8o.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQzODQyOTgwLTJ6Ym44by5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQzODQ1LCJleHAiOjIxMDU2MDM4NDV9.cNu1m6pbXc35wW_Z-mnDWdZTUPL4xgwpj8MRoCesetw",
-      "sprite_right_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790244597162-oi7k6a.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQ0NTk3MTYyLW9pN2s2YS5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQ0NTk5LCJleHAiOjIxMDU2MDQ1OTl9.68GEx-zkFErcHjHYAKwlSsn9PnC5B7q3PjJArAeWMp0",
-      "sprite_left_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790244642511-p941wf.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQ0NjQyNTExLXA5NDF3Zi5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQ0NjQ0LCJleHAiOjIxMDU2MDQ2NDR9.HbcVQJhnO7wPCsPFR2L7LO4KzNS4OrVKJ1nidMNaeiY",
-      "sprite_jump_url": "https://hgjnssvpydwdxbswozfp.supabase.co/storage/v1/object/sign/assets/characters/1790244925865-egov7k.png?token=eyJraWQiOiJiZDEwNDQyZC03MzZkLTRkNzItYjc5ZS1lODM2ZTAyNTRlMGUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvY2hhcmFjdGVycy8xNzkwMjQ0OTI1ODY1LWVnb3Y3ay5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkwMjQ0OTI3LCJleHAiOjIxMDU2MDQ5Mjd9.VoM2iloBj99U0PvYOjC1EBH1zR_U3t5ArTICYlaxwMM",
+      "image_url": "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
+      "sprite_right_url": "/storage_cache/characters/sprite_right_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwm9.png",
+      "sprite_left_url": "/storage_cache/characters/sprite_left_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwkm.png",
+      "sprite_jump_url": "/storage_cache/characters/sprite_jump_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwbi.png",
       "is_starter": true,
       "is_free": true,
       "credit_price": 0,

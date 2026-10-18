@@ -1178,7 +1178,7 @@ function MobileJoystick({
 
   return (
     <div className="pointer-events-none absolute inset-0 md:hidden select-none">
-      {/* 🎥 Left Side: Camera Rotation Joystick (2.5D/3D) OR Jump Button (2D) (Fixed to Physical Screen Left) */}
+      {/* 🎥 / ⤒ Left Side: Camera Rotation Joystick (2.5D/3D) OR Jump Button (2D) */}
       {is3DOrCool ? (
         <div className="pointer-events-auto absolute bottom-3 left-3 flex flex-col items-center gap-1">
           {/* Camera Horizontal Orbit Rotation Joystick */}
@@ -1204,7 +1204,6 @@ function MobileJoystick({
             }}
             onPointerUp={stopCam}
           >
-            {/* Horizontal rotation guide indicators */}
             <span className="pointer-events-none absolute left-1.5 text-[9px] font-black text-cyan-400/80">⟲</span>
             <span className="pointer-events-none absolute right-1.5 text-[9px] font-black text-cyan-400/80">⟳</span>
             <div
@@ -1219,7 +1218,7 @@ function MobileJoystick({
           </span>
         </div>
       ) : (
-        /* 2D Jump button */
+        /* 2D Jump button (Left side) */
         <div className="pointer-events-auto absolute bottom-4 left-3 flex flex-col items-center gap-1">
           <button
             className="grid h-14 w-14 place-items-center rounded-full border-2 border-white bg-primary text-xl text-primary-foreground shadow-2xl active:scale-95"
@@ -1236,7 +1235,7 @@ function MobileJoystick({
         </div>
       )}
 
-      {/* 🎮 Right Side: Movement Virtual Joystick (Fixed to Physical Screen Right) */}
+      {/* 🎮 Right Side: Movement Virtual Joystick */}
       <div className="pointer-events-auto absolute bottom-3 right-3 flex flex-col items-center gap-1">
         <div
           ref={moveRef}
@@ -1260,7 +1259,6 @@ function MobileJoystick({
           }}
           onPointerUp={stopMove}
         >
-          {/* Directional ticks */}
           <div className="pointer-events-none absolute inset-1 rounded-full border border-white/10" />
           <div
             className="pointer-events-none h-8 w-8 rounded-full bg-primary shadow-lg ring-2 ring-white/80 transition-transform duration-75 flex items-center justify-center text-[10px] text-white font-bold"

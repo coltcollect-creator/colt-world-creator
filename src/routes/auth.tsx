@@ -15,20 +15,8 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const { next } = Route.useSearch();
   const [busy, setBusy] = useState(false);
-  const [activeProvider, setActiveProvider] = useState<string | null>(null);
-  const [providerGuide, setProviderGuide] = useState<"facebook" | "apple" | null>(null);
-  const [copiedUri, setCopiedUri] = useState(false);
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-
-  const redirectUri = "https://gen-lang-client-0990466400.firebaseapp.com/__/auth/handler";
-
-  const copyRedirectUri = () => {
-    navigator.clipboard.writeText(redirectUri);
-    setCopiedUri(true);
-    toast.success("הכתובת הועתקה ללוח!");
-    setTimeout(() => setCopiedUri(false), 2500);
-  };
 
   useEffect(() => {
     if (!loading && user) {
@@ -37,29 +25,16 @@ function AuthPage() {
     }
   }, [user, loading, navigate, next]);
 
-  const handleOAuthSignIn = async (provider: "google" | "facebook" | "apple") => {
+  const handleGoogleSignIn = async () => {
     setBusy(true);
-    setActiveProvider(provider);
     try {
-      const res = await supabase.auth.signInWithOAuth({ provider });
+      const res = await supabase.auth.signInWithOAuth({ provider: "google" });
       if (res.error) {
-        const errMsg = String(res.error.message || "");
         const errCode = (res.error as any).code || "";
-        const isNotAllowed =
-          errMsg.includes("operation-not-allowed") ||
-          errMsg.includes("configuration-not-found") ||
-          errCode === "auth/operation-not-allowed" ||
-          errCode === "auth/configuration-not-found" ||
-          errCode === "auth/unauthorized-domain";
-
         if (errCode === "auth/popup-closed-by-user") {
           toast.info("ההתחברות בוטלה על ידך");
         } else if (errCode === "auth/popup-blocked") {
           toast.error("הדפדפן חסם את חלון ההתחברות הקופץ. אנא אפשרו חלונות קופצים (Popups) ונסו שוב.");
-        } else if (errCode === "auth/account-exists-with-different-credential") {
-          toast.error("קיים כבר חשבון עם אותה כתובת אימייל אך בספק אחר (למשל Google). התחברו דרכו.");
-        } else if (isNotAllowed && (provider === "facebook" || provider === "apple")) {
-          setProviderGuide(provider);
         } else {
           toast.error("שגיאה בהתחברות: " + (res.error.message || "נא לנסות שוב"));
         }
@@ -69,15 +44,9 @@ function AuthPage() {
         else navigate({ to: "/play" });
       }
     } catch (err) {
-      const msg = (err as Error).message || "";
-      if (msg.includes("operation-not-allowed") || msg.includes("configuration-not-found")) {
-        setProviderGuide(provider === "google" ? null : provider);
-      } else {
-        toast.error(msg);
-      }
+      toast.error((err as Error).message || "שגיאה בהתחברות עם Google");
     } finally {
       setBusy(false);
-      setActiveProvider(null);
     }
   };
 
@@ -100,20 +69,20 @@ function AuthPage() {
 
         <div className="mb-6 rounded-2xl bg-muted/60 p-4 border border-border text-center">
           <p className="text-sm font-semibold text-foreground mb-1">
-            הכניסה וההרשמה דרך חשבונות מאומתים
+            הכניסה וההרשמה מתבצעות באמצעות Gmail
           </p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            התחברו ישירות עם חשבון Google, Meta (Facebook) או Apple ID שלכם כדי להמשיך לדמות ולמתחם היריד.
+            התחברו ישירות עם חשבון ה-Google / Gmail שלכם כדי להמשיך לדמות, לדוכנים ולמתחם היריד.
           </p>
         </div>
 
         <div className="space-y-3">
-          {/* Google Sign In Button */}
+          {/* Google / Gmail Sign In Button */}
           <button
             type="button"
             disabled={busy}
-            onClick={() => handleOAuthSignIn("google")}
-            className="btn-plastic flex w-full items-center justify-center gap-3 font-bold text-sm py-3 shadow-md hover:brightness-105 active:scale-98 transition-all disabled:opacity-50"
+            onClick={handleGoogleSignIn}
+            className="btn-plastic flex w-full items-center justify-center gap-3 font-bold text-sm py-3.5 shadow-md hover:brightness-105 active:scale-98 transition-all disabled:opacity-50"
             style={{ background: "#ffffff", color: "#1f2937", border: "2px solid #e5e7eb" }}
           >
             <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24">
@@ -134,180 +103,9 @@ function AuthPage() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            <span>{busy && activeProvider === "google" ? "מתחבר עם Google…" : "המשך עם Google"}</span>
-          </button>
-
-          {/* Meta / Facebook Sign In Button */}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => handleOAuthSignIn("facebook")}
-            className="btn-plastic flex w-full items-center justify-center gap-3 font-bold text-sm py-3 text-white shadow-md hover:brightness-110 active:scale-98 transition-all disabled:opacity-50"
-            style={{ background: "#1877F2", border: "2px solid #166fe5" }}
-          >
-            <svg className="h-5 w-5 shrink-0 fill-current" viewBox="0 0 24 24">
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-            </svg>
-            <span>{busy && activeProvider === "facebook" ? "מתחבר עם Meta…" : "המשך עם Meta / Facebook"}</span>
-          </button>
-
-          {/* Apple ID Sign In Button */}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => handleOAuthSignIn("apple")}
-            className="btn-plastic flex w-full items-center justify-center gap-3 font-bold text-sm py-3 text-white shadow-md hover:brightness-125 active:scale-98 transition-all disabled:opacity-50"
-            style={{ background: "#000000", border: "2px solid #333333" }}
-          >
-            <svg className="h-5 w-5 shrink-0 fill-current" viewBox="0 0 24 24">
-              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.75 1.04-1.8 0.92-2.85-.9.04-1.99.6-2.64 1.35-.57.65-1.07 1.71-.94 2.73 1 .08 2.04-.48 2.66-1.23z"/>
-            </svg>
-            <span>{busy && activeProvider === "apple" ? "מתחבר עם Apple…" : "המשך עם Apple ID"}</span>
+            <span>{busy ? "מתחבר עם Google / Gmail…" : "המשך עם Google / Gmail"}</span>
           </button>
         </div>
-
-        {/* Modal Guide when provider is unauthorized in Firebase Console */}
-        {providerGuide && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="chrome-panel w-full max-w-lg p-6 space-y-4 shadow-2xl border-2 border-primary max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">{providerGuide === "facebook" ? "📘" : "🍏"}</span>
-                  <h3 className="font-bold text-base">
-                    הגדרת התחברות עם {providerGuide === "facebook" ? "Meta / Facebook" : "Apple ID"}
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setProviderGuide(null)}
-                  className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Selector tabs between Meta and Apple */}
-              <div className="flex rounded-xl bg-muted/60 p-1 border border-border">
-                <button
-                  type="button"
-                  onClick={() => setProviderGuide("facebook")}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    providerGuide === "facebook" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  📘 מדריך Meta (Facebook)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setProviderGuide("apple")}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    providerGuide === "apple" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  🍏 מדריך Apple ID
-                </button>
-              </div>
-
-              <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
-                <p className="font-bold mb-1">
-                  {providerGuide === "facebook"
-                    ? "מדוע נדרשת הגדרה ב-Firebase Console & Meta Developers?"
-                    : "מדוע נדרשת הגדרה ב-Firebase Console & Apple Developer?"}
-                </p>
-                <p>
-                  כדי שמשתמשים יוכלו להתחבר עם חשבון {providerGuide === "facebook" ? "Meta / Facebook" : "Apple"} האישי שלהם, יש להפעיל את הספק ב-Firebase Console ולהזין את מפתחות האפליקציה (App ID / Secret).
-                </p>
-              </div>
-
-              {/* Copy OAuth Redirect URI Box */}
-              <div className="space-y-1.5 bg-muted/70 p-3 rounded-xl border border-border text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-foreground">כתובת ה-Redirect URI של Firebase (יש להדביק בהגדרות הספק):</span>
-                  <button
-                    type="button"
-                    onClick={copyRedirectUri}
-                    className="text-[11px] px-2 py-0.5 rounded bg-primary text-primary-foreground hover:brightness-110 font-bold"
-                  >
-                    {copiedUri ? "✓ הועתק!" : "📋 העתק כתובת"}
-                  </button>
-                </div>
-                <code className="block break-all bg-background/80 p-2 rounded border border-border text-[11px] font-mono text-primary select-all">
-                  {redirectUri}
-                </code>
-              </div>
-
-              {providerGuide === "facebook" ? (
-                <div className="space-y-2 text-xs">
-                  <p className="font-bold text-foreground">שלבי ההגדרה עבור Meta / Facebook:</p>
-                  <ol className="list-decimal list-inside space-y-2 text-muted-foreground bg-muted/40 p-3 rounded-xl">
-                    <li>
-                      היכנסו אל <strong>Meta for Developers</strong> (developers.facebook.com) וצרו אפליקציה חדשה (סוג: Consumer או Business).
-                    </li>
-                    <li>
-                      הוסיפו את מוצר <strong>Facebook Login for Web</strong>.
-                    </li>
-                    <li>
-                      ב-<strong>Settings</strong> של Facebook Login, הדביקו את כתובת ה-<strong>Redirect URI</strong> (המופיעה מעלה) בשדה <em>Valid OAuth Redirect URIs</em> ושמרו.
-                    </li>
-                    <li>
-                      העתיקו את ה-<strong>App ID</strong> ואת ה-<strong>App Secret</strong> מתוך <em>App Settings &gt; Basic</em>.
-                    </li>
-                    <li>
-                      היכנסו אל <strong>Firebase Console</strong> בפרויקט: <code>gen-lang-client-0990466400</code>.
-                    </li>
-                    <li>
-                      עברו ל-<strong>Authentication &gt; Sign-in method</strong> &gt; לחצו על <strong>Facebook</strong> &gt; הפעילו (Enable) &gt; הדביקו את ה-App ID ו-App Secret ושמרו!
-                    </li>
-                  </ol>
-                </div>
-              ) : (
-                <div className="space-y-2 text-xs">
-                  <p className="font-bold text-foreground">שלבי ההגדרה עבור Apple ID:</p>
-                  <ol className="list-decimal list-inside space-y-2 text-muted-foreground bg-muted/40 p-3 rounded-xl">
-                    <li>
-                      היכנסו אל <strong>Apple Developer Portal</strong> (developer.apple.com) &gt; <em>Certificates, Identifiers &amp; Profiles</em>.
-                    </li>
-                    <li>
-                      צרו <strong>Services ID</strong> חדש, הפעילו בו <strong>Sign in with Apple</strong> והגדירו ב-<em>Return URLs</em> את כתובת ה-<strong>Redirect URI</strong> (מעלה).
-                    </li>
-                    <li>
-                      צרו <strong>Key (מפתח)</strong> עבור Sign in with Apple והורידו את קובץ ה-<code>.p8</code> (שימו לב ל-Key ID).
-                    </li>
-                    <li>
-                      היכנסו אל <strong>Firebase Console</strong> בפרויקט <code>gen-lang-client-0990466400</code>.
-                    </li>
-                    <li>
-                      עברו ל-<strong>Authentication &gt; Sign-in method</strong> &gt; לחצו על <strong>Apple</strong> &gt; הפעילו (Enable).
-                    </li>
-                    <li>
-                      הזינו את ה-<strong>Services ID</strong>, <strong>Team ID</strong>, <strong>Key ID</strong> ואת תוכן קובץ המפתח (Private Key) ושמרו!
-                    </li>
-                  </ol>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between border-t border-border pt-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProviderGuide(null);
-                    handleOAuthSignIn("google");
-                  }}
-                  className="btn-plastic text-xs px-3 py-2 flex-1"
-                >
-                  🌐 התחבר בינתיים עם Google
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setProviderGuide(null)}
-                  className="px-4 py-2 rounded-xl text-xs bg-muted hover:bg-muted/80 text-foreground font-bold"
-                >
-                  הבנתי, סגור
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="mt-8 border-t border-border pt-4 text-center">
           <p className="text-[11px] text-muted-foreground">

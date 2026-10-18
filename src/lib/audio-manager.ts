@@ -19,24 +19,26 @@ const LOCAL_MUSIC_SETTINGS_KEY = "colt_music_player_settings_v1";
 
 export interface PlayerAudioPreferences {
   muted: boolean;
-  volume: number; // 0.0 to 1.0 (default 0.18)
+  volume: number; // 0.0 to 1.0 (default 0.10)
   autoPlayEnabled: boolean;
+  userPaused?: boolean;
 }
 
 export function getStoredAudioPreferences(): PlayerAudioPreferences {
-  if (typeof window === "undefined") return { muted: false, volume: 0.18, autoPlayEnabled: true };
+  if (typeof window === "undefined") return { muted: false, volume: 0.10, autoPlayEnabled: true, userPaused: false };
   try {
     const raw = localStorage.getItem(LOCAL_MUSIC_SETTINGS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       return {
         muted: Boolean(parsed.muted),
-        volume: typeof parsed.volume === "number" ? Math.max(0, Math.min(1, parsed.volume)) : 0.18,
+        volume: typeof parsed.volume === "number" ? Math.max(0, Math.min(1, parsed.volume)) : 0.10,
         autoPlayEnabled: parsed.autoPlayEnabled !== false,
+        userPaused: Boolean(parsed.userPaused),
       };
     }
   } catch {}
-  return { muted: false, volume: 0.18, autoPlayEnabled: true };
+  return { muted: false, volume: 0.10, autoPlayEnabled: true, userPaused: false };
 }
 
 export function saveStoredAudioPreferences(prefs: Partial<PlayerAudioPreferences>) {

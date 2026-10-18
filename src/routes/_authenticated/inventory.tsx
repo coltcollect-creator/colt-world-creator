@@ -28,6 +28,15 @@ function Inventory() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkMode, setBulkMode] = useState<"pickup" | "shipping" | null>(null);
   const [address, setAddress] = useState("");
+  const [shippingForm, setShippingForm] = useState({
+    city: "",
+    street: "",
+    houseNumber: "",
+    apartment: "",
+    phone: "",
+    email: user?.email ?? "",
+    notes: "",
+  });
 
   const { data: cosm = [] } = useQuery({
     queryKey: ["inv", user?.id],
@@ -47,6 +56,7 @@ function Inventory() {
   });
 
   const awaiting = orders.filter((o) => o.fulfillment_status === "awaiting_request");
+
   const toggle = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -60,13 +70,39 @@ function Inventory() {
   const openBulk = (method: "pickup" | "shipping") => {
     if (selected.size === 0) { toast.error("בחרו לפחות פריט אחד"); return; }
     setBulkMode(method);
-    setAddress(method === "pickup" ? settings?.pickup_address ?? "" : "");
+    if (method === "pickup") {
+      setAddress(settings?.pickup_address ?? "");
+    } else {
+      setShippingForm((prev) => ({
+        ...prev,
+        email: prev.email || user?.email || "",
+      }));
+    }
   };
 
   const submitBulk = async () => {
     if (!bulkMode) return;
     const ids = Array.from(selected);
-    const { data, error } = await supabase.rpc("request_bulk_delivery" as never, { _order_ids: ids, _method: bulkMode, _address: address } as never);
+
+    let finalAddress = address;
+    if (bulkMode === "shipping") {
+      if (!shippingForm.city.trim() || !shippingForm.street.trim() || !shippingForm.houseNumber.trim()) {
+        toast.error("נא להזין עיר, רחוב ומספר בית");
+        return;
+      }
+      if (!shippingForm.phone.trim()) {
+        toast.error("נא להזין מספר טלפון ליצירת קשר");
+        return;
+      }
+      if (!shippingForm.email.trim()) {
+        toast.error("נא להזין אימייל לקבלת עדכוני משלוח");
+        return;
+      }
+
+      finalAddress = `עיר: ${shippingForm.city.trim()}, רחוב: ${shippingForm.street.trim()} ${shippingForm.houseNumber.trim()}${shippingForm.apartment.trim() ? `, דירה: ${shippingForm.apartment.trim()}` : ""}, טלפון: ${shippingForm.phone.trim()}, אימייל: ${shippingForm.email.trim()}${shippingForm.notes.trim() ? ` (הערות: ${shippingForm.notes.trim()})` : ""}`;
+    }
+
+    const { data, error } = await supabase.rpc("request_bulk_delivery" as never, { _order_ids: ids, _method: bulkMode, _address: finalAddress } as never);
     if (error) { toast.error(error.message); return; }
     const updated = (data as { updated?: number } | null)?.updated ?? ids.length;
     toast.success(bulkMode === "pickup" ? `${updated} פריטים מוכנים לאיסוף` : `${updated} פריטים יצאו במשלוח אחד`);
@@ -181,15 +217,114 @@ function Inventory() {
                 <div>{settings?.pickup_address ?? "כתובת האיסוף תישלח לאחר האישור."}</div>
               </div>
             ) : (
-              <label className="block text-xs">
-                <span className="mb-1 block font-semibold">כתובת למשלוח</span>
-                <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={3} className="w-full rounded-xl border-2 border-border bg-input px-3 py-2 text-sm" placeholder="רחוב, מספר, עיר, מיקוד" />
-                {(settings?.shipping_gems_cost ?? 0) > 0 && <div className="mt-1 text-[11px] text-muted-foreground">עלות משלוח: 💎 {settings?.shipping_gems_cost} (פעם אחת עבור הבקשה)</div>}
-              </label>
+              <div className="space-y-2.5 text-xs">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="mb-1 block font-bold text-foreground">עיר *</span>
+                    <input
+                      type="text"
+                      value={shippingForm.city}
+                      onChange={(e) => setShippingForm({ ...shippingForm, city: e.target.value })}
+                      placeholder="לדוגמה: תל אביב"
+                      className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs text-foreground"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block font-bold text-foreground">רחוב *</span>
+                    <input
+                      type="text"
+                      value={shippingForm.street}
+                      onChange={(e) => setShippingForm({ ...shippingForm, street: e.target.value })}
+                      placeholder="לדוגמה: דיזנגוף"
+                      className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs text-foreground"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="mb-1 block font-bold text-foreground">מספר בית *</span>
+                    <input
+                      type="text"
+                      value={shippingForm.houseNumber}
+                      onChange={(e) => setShippingForm({ ...shippingForm, houseNumber: e.target.value })}
+                      placeholder="לדוגמה: 42"
+                      className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs text-foreground"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block font-bold text-foreground">דירה / כניסה</span>
+                    <input
+                      type="text"
+                      value={shippingForm.apartment}
+                      onChange={(e) => setShippingForm({ ...shippingForm, apartment: e.target.value })}
+                      placeholder="לדוגמה: דירה 5, כניסה א'"
+                      className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs text-foreground"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="mb-1 block font-bold text-foreground">טלפון ליצירת קשר *</span>
+                    <input
+                      type="tel"
+                      value={shippingForm.phone}
+                      onChange={(e) => setShippingForm({ ...shippingForm, phone: e.target.value })}
+                      placeholder="050-0000000"
+                      dir="ltr"
+                      className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs text-foreground text-right"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block font-bold text-foreground">אימייל לעדכונים *</span>
+                    <input
+                      type="email"
+                      value={shippingForm.email}
+                      onChange={(e) => setShippingForm({ ...shippingForm, email: e.target.value })}
+                      placeholder="your@email.com"
+                      dir="ltr"
+                      className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs text-foreground text-right"
+                    />
+                  </label>
+                </div>
+
+                <label className="block">
+                  <span className="mb-1 block font-bold text-foreground">הערות לשליח (אופציונלי)</span>
+                  <input
+                    type="text"
+                    value={shippingForm.notes}
+                    onChange={(e) => setShippingForm({ ...shippingForm, notes: e.target.value })}
+                    placeholder="קוד לבניין, להשאיר ליד הדלת וכו'"
+                    className="w-full rounded-xl border-2 border-border bg-input px-3 py-1.5 text-xs text-foreground"
+                  />
+                </label>
+
+                {(settings?.shipping_gems_cost ?? 0) > 0 && (
+                  <div className="rounded-lg bg-primary/10 border border-primary/20 p-2 text-[11px] text-primary font-semibold flex items-center gap-1.5">
+                    <span>💎</span>
+                    <span>עלות משלוח מרוכז: {settings?.shipping_gems_cost} ג'מים (נגבה פעם אחת עבור כל הפריטים הנבחרים)</span>
+                  </div>
+                )}
+              </div>
             )}
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setBulkMode(null)} className="chrome-panel px-4 py-2 text-sm">ביטול</button>
-              <button onClick={submitBulk} disabled={bulkMode === "shipping" && !address.trim()} className="btn-plastic disabled:opacity-40">אשרו</button>
+              <button
+                onClick={submitBulk}
+                disabled={
+                  bulkMode === "shipping"
+                    ? !shippingForm.city.trim() ||
+                      !shippingForm.street.trim() ||
+                      !shippingForm.houseNumber.trim() ||
+                      !shippingForm.phone.trim() ||
+                      !shippingForm.email.trim()
+                    : false
+                }
+                className="btn-plastic disabled:opacity-40"
+              >
+                אשרו
+              </button>
             </div>
           </div>
         </div>

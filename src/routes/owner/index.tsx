@@ -340,6 +340,9 @@ const TAB_GROUPS: { label: string; icon: string; keys: Tab[] }[] = [
 
 function OwnerTabBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const { t } = useI18n();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+
   const { data: alerts } = useQuery({
     queryKey: ["owner-tab-alerts"],
     refetchInterval: 30000,
@@ -351,65 +354,193 @@ function OwnerTabBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
       return { messages: msgs.count ?? 0, orders: orders.count ?? 0 };
     },
   });
+
   const badgeFor = (key: Tab) =>
     key === "messages" ? (alerts?.messages ?? 0) : key === "orders" ? (alerts?.orders ?? 0) : 0;
   const label = (tt: { i18n: string; fallback?: string }) =>
     tt.fallback ? (t(tt.i18n) === tt.i18n ? tt.fallback : t(tt.i18n)) : t(tt.i18n);
   const activeGroup = TAB_GROUPS.find((g) => g.keys.includes(tab));
+  const currentTabObj = TABS.find((tt) => tt.key === tab);
+  const totalAlerts = (alerts?.messages ?? 0) + (alerts?.orders ?? 0);
 
   return (
     <div className="chrome-panel mb-3 p-2">
-      <div className="relative flex flex-nowrap items-start gap-1 overflow-visible">
+      {/* 📱 Mobile Header Bar with Hamburger Button */}
+      <div className="flex md:hidden items-center justify-between gap-2 px-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xl shrink-0">{currentTabObj?.icon ?? "🛠️"}</span>
+          <div className="min-w-0">
+            <div className="text-[10px] text-muted-foreground font-bold">{activeGroup?.label ?? "ניהול"}</div>
+            <div className="text-sm font-extrabold truncate text-primary">{currentTabObj ? label(currentTabObj) : "לוח בקרה"}</div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(true)}
+          className="flex items-center gap-2 rounded-xl bg-primary text-primary-foreground px-3 py-2 text-xs font-bold shadow-md active:scale-95 transition-all"
+        >
+          <span>☰</span>
+          <span>תפריט ניהול</span>
+          {totalAlerts > 0 && (
+            <span className="grid h-4 min-w-4 place-items-center rounded-full bg-destructive text-[10px] text-white font-bold">
+              {totalAlerts}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* 📱 Mobile Drawer Overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-black/70 backdrop-blur-sm md:hidden animate-in fade-in duration-200"
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <div
+            className="chrome-panel max-h-[85vh] w-full overflow-hidden rounded-t-3xl border-t-2 border-primary/40 bg-card p-4 shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-250"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border pb-3 mb-3 shrink-0">
+              <div className="flex items-center gap-2 font-bold text-base">
+                <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-primary-foreground text-sm font-black">C</span>
+                <span>תפריט ניהול מערכת</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                className="grid h-8 w-8 place-items-center rounded-full bg-muted hover:bg-muted/80 text-foreground font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto space-y-3 p-1 flex-1">
+              {TAB_GROUPS.map((g) => {
+                const isGroupExpanded = expandedGroup === g.label || activeGroup?.label === g.label;
+                const groupAlert = g.keys.reduce((n, k) => n + badgeFor(k), 0);
+
+                return (
+                  <div key={g.label} className="rounded-2xl border border-border bg-muted/30 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedGroup(isGroupExpanded && expandedGroup === g.label ? null : g.label)}
+                      className="w-full flex items-center justify-between p-3 text-start font-bold text-sm hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <span className="text-lg">{g.icon}</span>
+                        <span>{g.label}</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {groupAlert > 0 && (
+                          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-white">
+                            {groupAlert}
+                          </span>
+                        )}
+                        <span className="text-xs text-muted-foreground">{isGroupExpanded ? "▲" : "▼"}</span>
+                      </div>
+                    </button>
+
+                    {isGroupExpanded && (
+                      <div className="grid grid-cols-1 gap-1 p-2 pt-0 border-t border-border/50">
+                        {g.keys.map((k) => {
+                          const tt = TABS.find((x) => x.key === k);
+                          if (!tt) return null;
+                          const isActive = tab === k;
+                          const count = badgeFor(k);
+
+                          return (
+                            <button
+                              key={k}
+                              type="button"
+                              onClick={() => {
+                                setTab(k);
+                                setMobileMenuOpen(false);
+                              }}
+                              className={`flex items-center justify-between w-full px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                                isActive
+                                  ? "bg-primary text-primary-foreground shadow-md"
+                                  : "hover:bg-muted text-foreground bg-card/60"
+                              }`}
+                            >
+                              <span className="flex items-center gap-2.5">
+                                <span>{tt.icon}</span>
+                                <span>{label(tt)}</span>
+                              </span>
+                              {count > 0 && (
+                                <span className={`grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[10px] font-bold ${
+                                  isActive ? "bg-white text-primary" : "bg-destructive text-white"
+                                }`}>
+                                  {count}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🖥️ Desktop Tab Bar (Clickable groups + direct sub-tabs) */}
+      <div className="hidden md:flex flex-wrap items-center gap-1.5 pb-1">
         {TAB_GROUPS.map((g) => {
           const items = g.keys.map((k) => TABS.find((tt) => tt.key === k)!).filter(Boolean);
           const groupAlert = g.keys.reduce((n, k) => n + badgeFor(k), 0);
           const isActiveGroup = activeGroup?.label === g.label;
 
           return (
-          <div key={g.label} className="group relative shrink-0">
+            <div key={g.label} className="group relative shrink-0">
               <button
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                type="button"
+                onClick={() => setTab(g.keys[0])}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all cursor-pointer ${
                   isActiveGroup
-                    ? "bg-primary text-primary-foreground shadow"
-                    : "bg-muted/40 text-foreground hover:bg-muted"
+                    ? "bg-primary text-primary-foreground shadow-md ring-2 ring-primary/30"
+                    : "bg-muted/50 text-foreground hover:bg-muted border border-border/50"
                 }`}
               >
                 <span>{g.icon}</span>
                 <span>{g.label}</span>
                 {groupAlert > 0 && (
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-destructive" />
+                  <span className="grid h-4 min-w-4 place-items-center rounded-full bg-destructive text-[9px] text-white font-bold px-1">
+                    {groupAlert}
                   </span>
                 )}
+                <span className="text-[10px] opacity-60">▾</span>
               </button>
 
-              <div className="pointer-events-none absolute top-full z-30 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
-                <div className="h-2 w-full" />
-                <div className="min-w-[10rem] rounded-xl border border-border bg-card/95 p-1.5 shadow-xl backdrop-blur-sm">
+              <div className="pointer-events-none absolute top-full z-50 opacity-0 transition-all duration-150 group-hover:pointer-events-auto group-hover:opacity-100 start-0 pt-1">
+                <div className="min-w-[12rem] rounded-2xl border border-border bg-popover/95 p-1.5 shadow-2xl backdrop-blur-md">
                   {items.map((tt) => {
                     const count = badgeFor(tt.key);
                     const isActive = tab === tt.key;
                     return (
                       <button
                         key={tt.key}
+                        type="button"
                         onClick={() => setTab(tt.key)}
-                        className={`relative flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-start text-sm transition ${
+                        className={`relative flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-start text-xs font-semibold transition cursor-pointer ${
                           isActive
-                            ? "bg-primary/15 font-semibold text-primary"
-                            : "hover:bg-muted"
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : "hover:bg-muted text-foreground"
                         }`}
                       >
                         <span className="flex items-center gap-2">
-                          <span className="opacity-80">{tt.icon}</span>
+                          <span>{tt.icon}</span>
                           <span>{label(tt)}</span>
                         </span>
                         {count > 0 && (
-                          <span className="grid min-h-[18px] min-w-[18px] place-items-center rounded-full bg-destructive px-1.5 text-[10px] font-bold leading-none text-destructive-foreground">
-                            {count > 99 ? "99+" : count}
+                          <span className={`grid h-4 min-w-4 place-items-center rounded-full px-1 text-[9px] font-bold ${
+                            isActive ? "bg-white text-primary" : "bg-destructive text-white"
+                          }`}>
+                            {count}
                           </span>
                         )}
-                        {isActive && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
                       </button>
                     );
                   })}
@@ -419,6 +550,44 @@ function OwnerTabBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
           );
         })}
       </div>
+
+      {/* 🖥️ Desktop Sub-tabs Row for the Active Group (Immediate 1-click access) */}
+      {activeGroup && (
+        <div className="hidden md:flex flex-wrap items-center gap-1.5 pt-2 mt-2 border-t border-border/60">
+          <div className="text-[11px] font-bold text-muted-foreground flex items-center gap-1 ps-1 pe-2 border-e border-border/60">
+            <span>{activeGroup.icon}</span>
+            <span>{activeGroup.label}:</span>
+          </div>
+          {activeGroup.keys.map((k) => {
+            const tt = TABS.find((x) => x.key === k);
+            if (!tt) return null;
+            const isActive = tab === k;
+            const count = badgeFor(k);
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setTab(k)}
+                className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                  isActive
+                    ? "bg-primary text-primary-foreground shadow-sm font-bold scale-[1.02]"
+                    : "bg-muted/40 hover:bg-muted text-foreground border border-border/40"
+                }`}
+              >
+                <span>{tt.icon}</span>
+                <span>{label(tt)}</span>
+                {count > 0 && (
+                  <span className={`grid h-4 min-w-4 place-items-center rounded-full px-1 text-[9px] font-bold ${
+                    isActive ? "bg-white text-primary" : "bg-destructive text-white"
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1876,9 +2045,10 @@ type OwnerOrder = {
   delivered_at: string | null;
   created_at: string;
   quantity: number | null;
-  products: { name: string; sku: string | null; image_url: string | null } | null;
+  products: { name: string; sku: string | null; image_url: string | null; vendor_id?: string | null } | null;
   stores: { name: string } | null;
   profiles: { username: string } | null;
+  vendor_name?: string | null;
 };
 
 type OrderGroup = {
@@ -1903,13 +2073,27 @@ function OrdersPanel() {
   const { data: allRows = [] } = useQuery<OwnerOrder[]>({
     queryKey: ["own-orders"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("orders")
-        .select("id, order_number, shipment_number, user_id, order_type, status, fulfillment_status, credits_charged, shipping_method, delivery_address, delivered_at, created_at, quantity, products(name, sku, image_url), stores(name)")
-        .in("order_type", ["product", "wheel", "mystery_box", "auction", "live_rip"])
-        .order("created_at", { ascending: false })
-        .limit(500);
-      const list = (data ?? []) as unknown as OwnerOrder[];
+      const [{ data: ordersData }, { data: vendorsData }] = await Promise.all([
+        supabase
+          .from("orders")
+          .select("id, order_number, shipment_number, user_id, order_type, status, fulfillment_status, credits_charged, shipping_method, delivery_address, delivered_at, created_at, quantity, products(name, sku, image_url, vendor_id), stores(name)")
+          .in("order_type", ["product", "wheel", "mystery_box", "auction", "live_rip"])
+          .order("created_at", { ascending: false })
+          .limit(500),
+        supabase.from("vendors").select("id, shop_name"),
+      ]);
+
+      const vendorMap = new Map((vendorsData ?? []).map((v) => [v.id, v.shop_name || "חנות ונדור"]));
+      const list = (ordersData ?? []) as unknown as OwnerOrder[];
+
+      for (const r of list) {
+        if (r.products?.vendor_id) {
+          r.vendor_name = vendorMap.get(r.products.vendor_id) || "ונדור שותף";
+        } else {
+          r.vendor_name = "COLT ישיר";
+        }
+      }
+
       const uids = Array.from(new Set(list.map((r) => r.user_id)));
       if (uids.length) {
         const { data: profs } = await supabase.from("profiles").select("id, username").in("id", uids);
@@ -2074,8 +2258,8 @@ function OrdersPanel() {
               const isShipment = g.shipmentNumber != null;
               const label = isShipment ? `משלוח #${g.shipmentNumber}` : `הזמנה #${g.orders[0].order_number}`;
               const itemsSummary = g.orders.length === 1
-                ? (g.orders[0].products?.name ?? g.orders[0].order_type)
-                : `${g.orders.length} פריטים`;
+                ? `${g.orders[0].products?.name ?? g.orders[0].order_type} [${g.orders[0].vendor_name || "COLT"}]`
+                : `${g.orders.length} פריטים [${Array.from(new Set(g.orders.map((o) => o.vendor_name || "COLT"))).join(", ")}]`;
               return (
                 <tr key={g.key} className="cursor-pointer border-t border-border hover:bg-muted/50" onClick={() => setOpenGroup(g)}>
                   <td className="p-1" onClick={(e) => e.stopPropagation()}>
@@ -2167,8 +2351,13 @@ function OrdersPanel() {
                       : <div className="grid h-full w-full place-items-center text-lg">📦</div>}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-bold">{o.products?.name ?? o.order_type}</div>
-                    <div className="text-[11px] text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="truncate text-sm font-bold">{o.products?.name ?? o.order_type}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${o.products?.vendor_id ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300" : "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"}`}>
+                        🏪 {o.vendor_name || "COLT ישיר"}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
                       מק״ט: <span className="font-mono">{o.products?.sku ?? "—"}</span>
                       {" · "}הזמנה #<span className="font-mono">{o.order_number}</span>
                       {o.stores?.name && <> · חנות: {o.stores.name}</>}

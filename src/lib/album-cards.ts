@@ -150,7 +150,19 @@ export async function fetchAllAlbumCards(): Promise<AlbumCard[]> {
     }
   }
 
-  // 4. Dynamically include any quests that have an icon/image or card metadata
+  // 4. Directly fetch all quests from Supabase
+  try {
+    const { data: dbQuests } = await supabase.from("quests").select("*");
+    if (dbQuests && Array.isArray(dbQuests)) {
+      for (const q of dbQuests) {
+        gameDataStore.set("quests", q);
+      }
+    }
+  } catch (e) {
+    console.warn("Could not fetch remote quests for album:", e);
+  }
+
+  // 5. Dynamically include any quests that have an icon/image or card metadata
   const quests = gameDataStore.getAll("quests");
   let nextNum = 7;
   for (const q of quests) {
@@ -160,8 +172,6 @@ export async function fetchAllAlbumCards(): Promise<AlbumCard[]> {
 
     if (cardImg || q.cosmetic_reward || (q.metadata as any)?.has_card) {
       const questCardId = `quest-${q.id}`;
-      // Merge or update with current quest properties
-      const existing = cardMap.get(questCardId);
       cardMap.set(questCardId, {
         id: questCardId,
         card_number: cardNum,
@@ -180,12 +190,27 @@ export async function fetchAllAlbumCards(): Promise<AlbumCard[]> {
   return Array.from(cardMap.values()).sort((a, b) => a.card_number - b.card_number);
 }
 
-/** Synchronizes retroactive quest cards for a player */
+/** Synchronizes retroactive quest cards and level milestones for a player */
 export function getCompletedQuestCardsForUser(userId: string): UserCollectedCard[] {
   const result: UserCollectedCard[] = [];
   const playerQuests = gameDataStore.getAll("player_quests").filter((pq) => String(pq.user_id) === String(userId));
   const quests = gameDataStore.getAll("quests");
   const questsMap = new Map(quests.map((q) => [String(q.id), q]));
+
+  // Auto grant Card #1 (Welcome card) for every registered player
+  result.push({
+    id: `${userId}_card-welcome`,
+    user_id: userId,
+    card_id: "card-welcome",
+    card_number: 1,
+    card_title: "כרטיס כניסה לקולט",
+    card_image_url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80",
+    card_description: "מוענק לכל חוקר חדש שנכנס בפעם הראשונה לעולם של COLT Market.",
+    card_rarity: "common",
+    source_type: "quest",
+    source_name: "כניסה ראשונה לעולם",
+    unlocked_at: new Date().toISOString(),
+  });
 
   for (const pq of playerQuests) {
     const q = questsMap.get(String(pq.quest_id));

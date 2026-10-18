@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { supabase, cleanForFirestore } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { PLAYER_W, PLAYER_H, cosmeticRect, sortLayers } from "@/lib/avatar-layout";
@@ -14,16 +14,16 @@ import { drawDecor2DPreset } from "@/lib/decor-2d-drawer";
 const STARTER_CHARACTER_SPRITES: Record<string, { right: string; left: string | null; jump: string | null; idle: string }> = {
   "adventurer-orion": {
     name: "אוריון החוקר",
-    right: "/storage_cache/characters/sprite_right_url_adventurer-orion_muigjx5l.png",
+    right: "/storage_cache/characters/sprite_right_url_d14fed03-b2c5-4205-b2ff-a151345151ee_muigjxbf.png",
     left: "/storage_cache/characters/sprite_left_url_adventurer-orion_muigjx3c.png",
     jump: "/storage_cache/characters/sprite_right_url_adventurer-orion_muigjx5l.png",
     idle: "/storage_cache/characters/image_url_adventurer-orion_muigjx1q.png",
   } as any,
   "collector-carl": {
     name: "קארל האספן",
-    right: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
-    left: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
-    jump: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
+    right: "/storage_cache/characters/sprite_right_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwm9.png",
+    left: "/storage_cache/characters/sprite_left_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwkm.png",
+    jump: "/storage_cache/characters/sprite_jump_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwbi.png",
     idle: "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png",
   } as any,
   "trader-maya": {
@@ -55,6 +55,35 @@ const STARTER_CHARACTER_SPRITES: Record<string, { right: string; left: string | 
     idle: "/storage_cache/characters/image_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxm0.png",
   } as any,
 };
+
+function resolveCharacterSprite(url: string | null | undefined, fallback: string | undefined): string | null {
+  if (!url) return fallback ?? null;
+  if (url.startsWith("/storage_cache/") || url.startsWith("/characters/") || url.startsWith("data:")) {
+    return url;
+  }
+  // Ninja mappings
+  if (url.includes("1790241168098-3udpgm") || url.includes("muigjx1q")) return "/storage_cache/characters/image_url_adventurer-orion_muigjx1q.png";
+  if (url.includes("1790241340487-ckaoy2") || url.includes("muigjxbf")) return "/storage_cache/characters/sprite_right_url_d14fed03-b2c5-4205-b2ff-a151345151ee_muigjxbf.png";
+  if (url.includes("1790241435740-hts0q1") || url.includes("muigjx3c")) return "/storage_cache/characters/sprite_left_url_adventurer-orion_muigjx3c.png";
+  if (url.includes("1790242663226-5090yo") || url.includes("muigjx5l")) return "/storage_cache/characters/sprite_right_url_adventurer-orion_muigjx5l.png";
+
+  // Wizard mappings
+  if (url.includes("1790243842980-2zbn8o") || url.includes("muigjwus")) return "/storage_cache/characters/image_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwus.png";
+  if (url.includes("1790244597162-oi7k6a") || url.includes("muigjwm9")) return "/storage_cache/characters/sprite_right_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwm9.png";
+  if (url.includes("1790244642511-p941wf") || url.includes("muigjwkm")) return "/storage_cache/characters/sprite_left_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwkm.png";
+  if (url.includes("1790244925865-egov7k") || url.includes("muigjwbi")) return "/storage_cache/characters/sprite_jump_url_44ca85cf-9e82-47e5-9ce5-06abde1ec0d1_muigjwbi.png";
+
+  // Maya mappings
+  if (url.includes("1790245088277-toz4do") || url.includes("muigjxm0")) return "/storage_cache/characters/image_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxm0.png";
+  if (url.includes("1790247232415-8xr2rk") || url.includes("muigjxf0")) return "/storage_cache/characters/sprite_right_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxf0.png";
+  if (url.includes("1790247260248-s75sru") || url.includes("muigjxje")) return "/storage_cache/characters/sprite_left_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxje.png";
+  if (url.includes("1790247494137-s0fbcz") || url.includes("muigjxh9")) return "/storage_cache/characters/sprite_jump_url_d7fc1b37-dae3-4bd0-bab1-3c21a4a51571_muigjxh9.jpg";
+
+  if (url.includes("supabase.co/storage")) {
+    return fallback ?? null;
+  }
+  return url;
+}
 
 export type MapObject = {
   id: string;
@@ -200,6 +229,8 @@ export function GameViewport({
   const otherLooksRef = useRef<Record<string, Look>>({});
   otherLooksRef.current = otherLooks;
 
+  const storesOnMap = useMemo(() => objects.filter((o) => o.object_type === "store"), [objects]);
+  const npcsOnMap = useMemo(() => objects.filter((o) => o.object_type === "npc"), [objects]);
 
   const nearbyRef = useRef<string | null>(null);
   const bubblesRef = useRef<Map<string, { text: string; until: number }>>(new Map());
@@ -335,8 +366,6 @@ export function GameViewport({
     const decor = objects.filter((o) => o.object_type === "decor");
     const screens = objects.filter((o) => o.object_type === "screen");
     const doors = objects.filter((o) => o.object_type === "door");
-    const storesOnMap = objects.filter((o) => o.object_type === "store");
-    const npcsOnMap = objects.filter((o) => o.object_type === "npc");
     const treasuresOnMap = objects.filter((o) => o.object_type === "treasure" && o.reference_id);
     const arcadesOnMap = objects.filter((o) => o.object_type === "arcade" || o.object_type === "minigame");
 
@@ -729,7 +758,7 @@ export function GameViewport({
       }
       // Stores with rotation support (45° angles etc.)
       for (const st of storesOnMap) {
-        if (st.x < s.camX - 250 || st.x > s.camX + viewportWidth + 250) continue; // Cull offscreen store
+        if (st.x + (st.width || 300) < s.camX - 3000 || st.x > s.camX + viewportWidth + 3000) continue; // Ultra generous buffer - booths never pop in or out
         const sref = stores.find((x) => x.id === st.reference_id);
         const img = getImg(sref?.image_url || (st.metadata?.sprite_url as string | undefined));
         const rot = (st.metadata?.rotation_y as number) ?? (st.metadata?.rotation_deg ? (st.metadata?.rotation_deg as number) * (Math.PI / 180) : 0);
@@ -769,7 +798,7 @@ export function GameViewport({
       }
       // Arcade Minigame Machines
       for (const arc of arcadesOnMap) {
-        if (arc.x < s.camX - 200 || arc.x > s.camX + viewportWidth + 200) continue;
+        if (arc.x + (arc.width || 120) < s.camX - 1200 || arc.x > s.camX + viewportWidth + 1200) continue;
         const gameId = (arc.reference_id as string) || "catch_card";
         const gameTitle = (arc.metadata?.label as string) || (gameId.includes("pack") ? "קריעת בוסטר" : gameId.includes("grading") ? "צחצוח ל-PSA 10" : "תפוס את הקלף");
         const w = arc.width || 100;
@@ -840,7 +869,7 @@ export function GameViewport({
       // NPCs (sprite-aware)
       for (const n of npcsOnMap) {
         const np = s.npcPositions.get(n.id) ?? { x: n.x, y: n.y, dir: 1, base: n.x };
-        if (np.x < s.camX - 200 || np.x > s.camX + viewportWidth + 200) continue; // Cull offscreen NPC
+        if (np.x + 150 < s.camX - 1200 || np.x > s.camX + viewportWidth + 1200) continue; // Cull offscreen NPC
         const nref = npcs.find((x) => x.id === n.reference_id);
         const direction: "left" | "right" = np.dir < 0 ? "left" : "right";
         const url = pickSprite(nref, direction, false) || (n.metadata?.sprite_url as string | undefined);
@@ -869,21 +898,23 @@ export function GameViewport({
         const ox = lp?.x ?? op.x;
         const oy = lp?.y ?? op.y;
 
-        // Viewport Culling: only draw players within camera viewport + 200px margin
+        // Viewport Culling: wide margin so players do not pop in/out
         if (
-          ox < s.camX - 200 ||
-          ox > s.camX + viewportWidth + 200 ||
-          oy < s.camY - 200 ||
-          oy > s.camY + viewportHeight + 200
+          ox + 100 < s.camX - 1200 ||
+          ox > s.camX + viewportWidth + 1200 ||
+          oy < s.camY - 1200 ||
+          oy > s.camY + viewportHeight + 1200
         ) {
           continue; // Off-screen! Skip drawing
         }
 
         const oFacing = lp?.facing ?? "right";
+        const opCid = (op as unknown as { character_id?: string | null })?.character_id;
+        const opStarter = opCid ? STARTER_CHARACTER_SPRITES[opCid] : undefined;
         const sprite = oFacing === "left"
-          ? (look?.left ?? look?.idle ?? look?.right ?? null)
-          : (look?.right ?? look?.idle ?? null);
-        drawAvatar(ctx, ox, oy, sprite, look?.cosmetics ?? [], oFacing, "#60a5fa", oFacing === "left" && !look?.left, lp?.moving ?? false);
+          ? (look?.left ?? opStarter?.left ?? look?.idle ?? opStarter?.idle ?? look?.right ?? opStarter?.right ?? null)
+          : (look?.right ?? opStarter?.right ?? look?.idle ?? opStarter?.idle ?? null);
+        drawAvatar(ctx, ox, oy, sprite, look?.cosmetics ?? [], oFacing, "#60a5fa", oFacing === "left" && !look?.left, lp?.moving ?? false, opCid);
         ctx.fillStyle = "#1e3a8a"; ctx.font = "bold 11px Fredoka, system-ui"; ctx.textAlign = "center";
         ctx.fillText(op.username ?? "player", ox + PLAYER_W / 2, oy - 6);
         const b = bubblesRef.current.get(op.user_id);
@@ -894,19 +925,28 @@ export function GameViewport({
       const facing: "left" | "right" = s.facing === -1 ? "left" : "right";
       let spriteUrl: string | null = null;
       let flip = false;
-      if (characterSprites) {
-        const moving = s.vx !== 0;
-        const wantJump = jumping && characterSprites.jump;
-        spriteUrl = wantJump
-          ? characterSprites.jump
-          : !moving
-            ? (characterSprites.idle ?? (facing === "right" ? characterSprites.right : (characterSprites.left ?? characterSprites.right)))
-            : facing === "right"
-              ? characterSprites.right
-              : (characterSprites.left ?? characterSprites.right);
-        flip = facing === "left" && !characterSprites.left && !wantJump;
+      const cid = (profile as unknown as { character_id?: string | null } | null)?.character_id || "adventurer-orion";
+      const fallbackSprites = STARTER_CHARACTER_SPRITES[cid] || STARTER_CHARACTER_SPRITES["adventurer-orion"];
+      const activeSprites = characterSprites || fallbackSprites;
+
+      const moving = Math.abs(s.vx) > 0.1;
+      const jumpSprite = activeSprites.jump || fallbackSprites.jump;
+      if (jumping) {
+        spriteUrl = jumpSprite;
+        flip = facing === "left";
+      } else if (moving) {
+        if (facing === "right") {
+          spriteUrl = activeSprites.right || fallbackSprites.right;
+          flip = false;
+        } else {
+          spriteUrl = activeSprites.left || activeSprites.right || fallbackSprites.left;
+          flip = !activeSprites.left;
+        }
+      } else {
+        spriteUrl = activeSprites.idle || (facing === "right" ? (activeSprites.right || fallbackSprites.right) : (activeSprites.left || activeSprites.right || fallbackSprites.left));
+        flip = facing === "left" && !activeSprites.left;
       }
-      drawAvatar(ctx, s.x, s.y, spriteUrl, equipped, facing, "#ec4899", flip, jumping);
+      drawAvatar(ctx, s.x, s.y, spriteUrl, equipped, facing, "#ec4899", flip, jumping, cid);
       ctx.fillStyle = "#3b1f4a"; ctx.font = "bold 11px Fredoka, system-ui"; ctx.textAlign = "center";
       ctx.fillText(profile?.username ?? "you", s.x + PLAYER_W / 2, s.y - 6);
       if (user) {
@@ -934,10 +974,26 @@ export function GameViewport({
     };
   }, [width, height, viewportWidth, viewportHeight, objects, stores, npcs, user, mapId, onInteract, onNearby, profile?.username, equipped, characterSprites, backgroundColor, touchInputRef]);
 
+  // Preload all store images and NPC sprites to eliminate pop-in
+  useEffect(() => {
+    for (const st of storesOnMap) {
+      const sref = stores.find((x) => x.id === st.reference_id);
+      const url = sref?.image_url || (st.metadata?.sprite_url as string | undefined);
+      if (url) getImg(url);
+    }
+    for (const n of npcsOnMap) {
+      const nref = npcs.find((x) => x.id === n.reference_id);
+      if (nref?.image_url) getImg(nref.image_url);
+      if (nref?.sprite_right_url) getImg(nref.sprite_right_url);
+      if (nref?.sprite_left_url) getImg(nref.sprite_left_url);
+      if (n.metadata?.sprite_url) getImg(n.metadata.sprite_url as string);
+    }
+  }, [storesOnMap, stores, npcsOnMap, npcs]);
+
   // Load selected base character sprites from profile.character_id
   useEffect(() => {
     const cid = (profile as unknown as { character_id?: string | null } | null)?.character_id || "adventurer-orion";
-    const cached = STARTER_CHARACTER_SPRITES[cid];
+    const cached = STARTER_CHARACTER_SPRITES[cid] || STARTER_CHARACTER_SPRITES["adventurer-orion"];
     if (cached) {
       setCharacterSprites({
         right: cached.right,
@@ -945,8 +1001,10 @@ export function GameViewport({
         jump: cached.jump,
         idle: cached.idle,
       });
-      getImg(cached.right);
-      getImg(cached.idle);
+      if (cached.right) getImg(cached.right);
+      if (cached.left) getImg(cached.left);
+      if (cached.jump) getImg(cached.jump);
+      if (cached.idle) getImg(cached.idle);
     }
     let cancelled = false;
     (async () => {
@@ -956,17 +1014,19 @@ export function GameViewport({
         .eq("id", cid).maybeSingle();
       if (cancelled || !data) return;
       const d = data as { sprite_right_url: string | null; sprite_left_url: string | null; sprite_jump_url: string | null; image_url: string | null };
-      const right = d.sprite_right_url ?? d.image_url;
-      const idle = d.image_url ?? d.sprite_right_url;
+      const right = resolveCharacterSprite(d.sprite_right_url ?? d.image_url, cached?.right);
+      const left = resolveCharacterSprite(d.sprite_left_url, cached?.left);
+      const jump = resolveCharacterSprite(d.sprite_jump_url, cached?.jump);
+      const idle = resolveCharacterSprite(d.image_url, cached?.idle ?? right ?? undefined);
       if (right) getImg(right);
       if (idle) getImg(idle);
-      if (d.sprite_left_url) getImg(d.sprite_left_url);
-      if (d.sprite_jump_url) getImg(d.sprite_jump_url);
+      if (left) getImg(left);
+      if (jump) getImg(jump);
       setCharacterSprites({
-        right,
-        left: d.sprite_left_url,
-        jump: d.sprite_jump_url,
-        idle,
+        right: right ?? cached?.right ?? null,
+        left: left ?? cached?.left ?? null,
+        jump: jump ?? cached?.jump ?? null,
+        idle: idle ?? cached?.idle ?? null,
       });
     })();
     return () => { cancelled = true; };
@@ -1252,6 +1312,7 @@ function drawAvatar(
   fallbackColor: string,
   flip = false,
   jumping = false,
+  characterId?: string | null,
 ) {
   const box = { x, y, w: PLAYER_W, h: PLAYER_H };
   const ordered = sortLayers(cosmetics);
@@ -1282,8 +1343,13 @@ function drawAvatar(
 
   let base = spriteUrl ? getImg(spriteUrl) : null;
   if (!base || !base.complete || !base.naturalWidth) {
-    const starterFallback = STARTER_CHARACTER_SPRITES["d14fed03-b2c5-4205-b2ff-a151345151ee"];
-    const fallbackUrl = facing === "left" && starterFallback.left ? starterFallback.left : starterFallback.right;
+    const cid = characterId || "adventurer-orion";
+    const starterFallback = STARTER_CHARACTER_SPRITES[cid] || STARTER_CHARACTER_SPRITES["adventurer-orion"];
+    const fallbackUrl = jumping && starterFallback.jump
+      ? starterFallback.jump
+      : facing === "left" && starterFallback.left
+      ? starterFallback.left
+      : starterFallback.right;
     base = getImg(fallbackUrl);
   }
 

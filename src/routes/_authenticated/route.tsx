@@ -36,9 +36,6 @@ const NAV = [
   { to: "/inventory", key: "nav.inventory", icon: "🎒" },
   { to: "/quests", key: "nav.quests", icon: "📜" },
   { to: "/messages", key: "nav.messages", icon: "💬" },
-  { to: "/credits", key: "nav.credits", icon: "💎" },
-  { to: "/history", key: "nav.history", icon: "🧾" },
-  { to: "/settings", key: "nav.settings", icon: "⚙️" },
 ] as const;
 
 function AuthedLayout() {
@@ -64,7 +61,6 @@ function AuthedLayout() {
       ]);
       return (data ?? []).reduce((s, r) => s + (r.unread_user ?? 0), 0) + (count ?? 0);
     },
-
   });
 
   const { data: isVendor = false } = useQuery({
@@ -87,19 +83,6 @@ function AuthedLayout() {
     navigate({ to: "/play" });
   };
 
-  const handleSwitchToExpoMap = () => {
-    try {
-      localStorage.setItem("colt_last_map_id", "colt-grand-expo-2.5d");
-    } catch {}
-    window.dispatchEvent(new CustomEvent("colt-map-updated"));
-    setMenuOpen(false);
-    if (loc.pathname === "/play") {
-      window.location.search = "?mapId=colt-grand-expo-2.5d";
-    } else {
-      navigate({ to: "/play", search: { mapId: "colt-grand-expo-2.5d" } });
-    }
-  };
-
   useEffect(() => {
     if (loading || !user || !profile) return;
     const hasCharacter = Boolean(
@@ -117,8 +100,8 @@ function AuthedLayout() {
 
   return (
     <div className="min-h-screen">
-      <header className="chrome-panel mx-3 mt-3 flex items-center justify-between gap-2 rounded-2xl px-3 py-2">
-        <div className="flex items-center gap-2 min-w-0">
+      <header className="chrome-panel mx-3 mt-3 flex items-center justify-between gap-2 rounded-2xl px-3 py-2 flex-nowrap">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             aria-label="menu"
             onClick={() => setMenuOpen(true)}
@@ -129,32 +112,23 @@ function AuthedLayout() {
               <span className="absolute -top-1 -end-1 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">{unread}</span>
             )}
           </button>
-          <Link to="/play" className="flex items-center gap-2 font-bold min-w-0">
+          <Link to="/play" className="flex items-center gap-2 font-bold shrink-0">
             <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-md">C</div>
-            <span className="truncate text-sm sm:text-base">{t("app.name")}</span>
+            <span className="truncate text-sm sm:text-base hidden sm:inline">{t("app.name")}</span>
           </Link>
           <button
             type="button"
             onClick={handleReturnToMainMap}
-            className="hidden sm:inline-flex items-center gap-1 rounded-full bg-sky-500/15 border border-sky-500/30 px-2.5 py-1 text-xs font-bold text-sky-700 dark:text-sky-300 shadow-sm hover:bg-sky-500/25 active:scale-95 transition-all"
+            className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 border border-sky-500/30 px-2.5 py-1 text-xs font-bold text-sky-700 dark:text-sky-300 shadow-sm hover:bg-sky-500/25 active:scale-95 transition-all shrink-0"
             title="חזרה למפה הראשית"
           >
             <span>🏰</span>
             <span>מפה ראשית</span>
           </button>
-          <button
-            type="button"
-            onClick={handleSwitchToExpoMap}
-            className="hidden sm:inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/40 px-2.5 py-1 text-xs font-bold text-purple-700 dark:text-purple-300 shadow-sm hover:from-purple-500/30 hover:to-pink-500/30 active:scale-95 transition-all"
-            title="מעבר להיכל האקספו 2.5D"
-          >
-            <span>🎪</span>
-            <span>היכל האקספו 2.5D</span>
-          </button>
         </div>
-        <nav data-tour="nav" className="hidden gap-1 lg:flex">
+        <nav data-tour="nav" className="hidden gap-1 lg:flex items-center shrink-0">
           {NAV.map((n) => (
-            <Link key={n.to} to={n.to} data-tour={`nav-${n.to}`} className="relative rounded-full px-3 py-1 text-sm hover:bg-muted" activeProps={{ className: "bg-primary/15 text-primary font-semibold" }}>
+            <Link key={n.to} to={n.to} data-tour={`nav-${n.to}`} className="relative rounded-full px-3 py-1 text-sm hover:bg-muted whitespace-nowrap" activeProps={{ className: "bg-primary/15 text-primary font-semibold" }}>
               <span className="mx-1">{n.icon}</span>{t(n.key)}
               {n.to === "/messages" && unread > 0 && (
                 <span className="absolute -top-1 -end-1 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">{unread}</span>
@@ -162,7 +136,7 @@ function AuthedLayout() {
             </Link>
           ))}
           {isVendor && (
-            <Link to="/vendor" className="relative rounded-full px-3 py-1 text-sm hover:bg-muted" activeProps={{ className: "bg-primary/15 text-primary font-semibold" }}>
+            <Link to="/vendor" className="relative rounded-full px-3 py-1 text-sm hover:bg-muted whitespace-nowrap" activeProps={{ className: "bg-primary/15 text-primary font-semibold" }}>
               <span className="mx-1">🏪</span>אזור הוונדור
             </Link>
           )}
@@ -253,18 +227,6 @@ function AuthedLayout() {
                 <span className="text-xs opacity-70">חזור ↵</span>
               </button>
 
-              {/* Fast Teleport to 2.5D Expo Hall in Mobile Menu */}
-              <button
-                type="button"
-                onClick={handleSwitchToExpoMap}
-                className="w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-bold bg-gradient-to-r from-purple-500/15 to-pink-500/15 text-purple-700 dark:text-purple-300 hover:from-purple-500/25 hover:to-pink-500/25 active:scale-[0.98] transition-all"
-              >
-                <span className="flex items-center gap-2">
-                  <span className="text-lg">🎪</span>
-                  <span>היכל האקספו 2.5D</span>
-                </span>
-                <span className="text-xs opacity-70">כניסה ↵</span>
-              </button>
 
               {NAV.map((n) => (
                 <Link

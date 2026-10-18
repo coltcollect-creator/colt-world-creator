@@ -221,10 +221,21 @@ export function DigitalAlbum({
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-white/0 via-white/20 to-white/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                   </>
                 ) : (
-                  <div className="grid h-full w-full place-items-center bg-slate-200 dark:bg-slate-800 text-slate-400">
-                    <div className="text-center p-2">
-                      <Lock className="mx-auto h-7 w-7 opacity-40 mb-1" />
-                      <div className="text-[10px] font-bold opacity-60">קלף נעול</div>
+                  <div className="relative h-full w-full bg-slate-900/10">
+                    {card.image_url ? (
+                      <img
+                        src={card.image_url}
+                        alt={card.title}
+                        className="h-full w-full object-cover grayscale brightness-50 opacity-40 blur-[1px]"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : null}
+                    <div className="absolute inset-0 grid place-items-center bg-black/40 text-white backdrop-blur-[2px]">
+                      <div className="text-center p-2">
+                        <Lock className="mx-auto h-6 w-6 text-amber-300/80 mb-1" />
+                        <div className="text-[10px] font-bold text-white/90">טרם נפתח</div>
+                      </div>
                     </div>
                   </div>
                 )}
